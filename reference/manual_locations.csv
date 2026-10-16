@@ -1,0 +1,47 @@
+level,code,origin,reference_name,confidence,evidence
+UP,BAHIAB,osm,Central Termica Bahia de Bizkaia Electricidad,high,785 MW matches sum of its three units (785.3 MW)
+UP,ECT3,osm,Central Termoelectrica del Ebro Escatron-Los Fayos,high,804 MW matches sum of its three units (804.3 MW)
+UP,PGR5,osm,Central de Ciclo Combinado Endesa - As Pontes,high,856 MW matches sum of its three units (855.6 MW)
+UP,MLTB,osm,Central hidroelectrica de Moralets,high,219 MW = three 73 MW pumped-storage groups
+UP,MLTG,osm,Central hidroelectrica de Moralets,high,219 MW = three 73 MW pumped-storage groups
+UP,ESC6,opsd,CTCC ESCOMBRERAS,high,831 MW vs 815.6 MW; Escombreras combined-cycle plant
+UP,ESCCC1,opsd,ESCOMBRERAS GRUPO 1,medium,Escombreras valley gas plants all lie within about 1 km of each other
+UF,AUSINE,osm,Parque Eolico Los Ausines,high,27 MW in both sources
+UF,R112947,osm,Parque Eolico Las Majas III,high,unit named MAJAS III Y IV; 33 MW in both sources
+UF,R112949,osm,Parque Eolico Las Majas IV,medium,unit named MAJAS III Y IV; 38.3 MW vs 30 MW
+UF,UFBAD2,osm,PSFV CS Badajoz II,medium,same plant number; 41.6 MW vs 50 MW
+UF,UFBAD4,osm,PSFV CS BADAJOZ 4,medium,same plant number; 41.6 MW vs 50 MW
+UF,FVCEDIL,osm,PSFV Cedillo II,medium,only solar plant named Cedillo; 267 MW vs 375 MW
+UP,GEXTRII,osm,Centrales Termosolares Extresol 1 & 2 & 3,high,150 MW site = three 49.9 MW Extresol units
+UP,GEXTIII,osm,Centrales Termosolares Extresol 1 & 2 & 3,high,150 MW site = three 49.9 MW Extresol units
+UP,SASTEXO,osm,Termosolar Astexol 2,high,plant code ASTEXO2; 49.9 MW in both sources
+UP,FTABRNS,osm,Central Solar Fotovoltaica Naturgy Tabernas II,high,unit named TABERNASII; 41.6 MW vs 48.8 MW
+UP,REEM20,osm,ENCE Mérida,high,ENCE Energia Extremadura; 20 MW biomass in both sources
+UF,MONTERO,osm,Parque Eólico Los Monteros,high,P. E. MONTERO; 25.5 MW in both sources
+UF,ELTOLLO,osm,"El Tollo 1, 2 y 3 y Oitura",medium,PE EL TOLLO; name match only and no capacity in OpenStreetMap
+UF,GALAFOT,osm,FSPV Gala,high,"BOE-A-2022-1839: FV Gala (Gala Sostenible SL), 90 MW, La Roca de la Sierra; same owner code GESTE as Aurea and Gaetana there"
+UF,GPEREA,osm,PSFV Perea,high,"code is G (Galp) + PEREA; OSM PSFV Perea 49.5 MW against 40.8 MW, in Galp's Alcazar de San Juan cluster"
+UF,GVEGON,osm,PSFV VEGON,high,code is G (Galp) + VEGON; OSM PSFV VEGON lies next to PSFV Perea
+UF,ALVSOL,osm,PSFV Sol Alvarado,medium,"SOL ALV = Sol Alvarado, 35 MW; OSM PSFV Sol Alvarado, Badajoz"
+UF,ALVSPK,osm,PSFV Alvarado,medium,"SPK ALV = solar park Alvarado; same owner SHEEN as SOL ALV, plants 1 km apart"
+UF,CDP1,osm,Planta Solar Casas de Don Pedro I,high,CASASDP1 47.4 MW against 47.05 MW
+UF,CDP2,osm,PSFV Casas de Don Pedro II,high,CASASDP2 36.0 MW against 36.0 MW
+UF,SSVAN,osm,Planta solar fotovoltaica San Serván 8,low,"SSVAN, SESAN and VNSER are letter fragments of SAN SERVAN; owner GNRA's three 40 MW units; OSM San Servan 6-8 lie within 3 km"
+UF,SESAN,osm,Planta solar fotovoltaica San Serván 8,low,see SSVAN
+UF,VNSER,osm,Planta solar fotovoltaica San Serván 8,low,see SSVAN
+UF,EXTRE3F,osm,Planta Foltovoltaica Extremadura III,high,UFI VENTA FV EXTREM3 = Extremadura III hybrid plant; OSM Extremadura III
+UF,MIDCOTR,osm,Planta Termosolar de Puertollano,medium,TERMOLLANO solar thermal 48 MW; the Puertollano solar thermal plant is 50 MW
+UF,UFVISCO,gem,Viscofan,medium,UP VISCOFAN gas cogeneration 48 MW; Viscofan's factory at Caseda (GEM lists its on-site PV there)
+UF,ALMOSUR,osm,Parque Eólico Montemaior Sur,high,ALABE-MONTEMAYOR SUR 12.7 MW against 12.75 MW
+UF,AREFA,gem,Refachón,high,P. E. ALABE REFACHON 21.0 MW against 21 MW
+UF,ALOMBA,osm,Parque Eólico La Lomba,medium,"P. E. ALABE-LOMBA 22.5 MW against 23 MW, among the other Alabe farms in Lugo"
+UF,CANONER,osm,Cañoneras,medium,REE name P. E. CA¥ORERAS (garbled Canoneras) 32.3 MW against two OSM Canoneras farms of 16.15 MW
+UF,IMANZAN,gem,Ictio Manzanares,high,Galp unit IMANZAN 35 MW; GEM Ictio Manzanares (Galp brand Ictio) 35 MW
+UF,MAZNARS,osm,FSPV OPDE Manzanares 1,medium,MANZANARS 30 MW; OSM OPDE Manzanares 1 30 MW
+UF,UFAZUBI,osm,Parque Eólico Las Azubías,high,"PE LAS AZUBAS (typo) 46 MW, owner Molinos del Moncayo; OSM and Aragon list Las Azubias 46 MW"
+UF,GSLZB1,osm,Planta Solar Fotovoltaica San Serván 2021,medium,"UP ALTER ENERSUN MERIDA DOS 10.8 MW; DOE notice: San Servan 2021 by Alter Enersun Merida Dos, 10.53 MW"
+UF,ARCICAR,osm,PSF Arcicóllar,high,ARCOLLAR (typo) 14.5 MW; OSM PSF Arcicollar 14.5 MW
+UF,CBLANCO,gem,Cerro Blanco (Iberdrola),high,P. E. CERRO BLANCO 42 MW in Iberdrola portfolio EHIBGES; GEM Cerro Blanco (Iberdrola) 42 MW
+UF,AMAREI,gem,Mareiro,medium,"AMAREI = Alabe Mareiro 15 MW; GEM Mareiro 15 MW, among the Alabe farms in Lugo"
+UF,ALESTE,osm,Parque Eólico de Leste,medium,ALESTE = Alabe Leste 14.2 MW; OSM Leste 14.25 MW in Lugo
+UF,PICONI,osm,"Parque Fotovoltaico Picón I, II y III",medium,ISFV PICON I 46 MW; OSM Picon I-III complex

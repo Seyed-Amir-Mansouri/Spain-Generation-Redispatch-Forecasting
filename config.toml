@@ -1,23 +1,49 @@
 [paths]
-sdac = "data/raw/sdac_results.csv"
-forecasts = "data/raw/system_forecasts.csv"
-outages = "data/raw/planned_outages.csv"
-gopacs = "data/raw/gopacs_events.csv"
+registry_dir = "data/raw/registry"
+plants_dir = "data/raw/plants"
+redispatch_dir = "data/raw/i90"
+market = "data/raw/market.csv"
+constraints = "data/raw/constraints.csv"
+weather = "data/raw/weather.csv"
+unit_locations = "data/processed/unit_locations.csv"
+manual_locations = "reference/manual_locations.csv"
 model_dir = "models"
 predictions = "outputs/predictions.csv"
 validation = "outputs/validation_history.csv"
 
-# placeholder congestion-area codes, replace with real GOPACS location codes
-[areas]
-codes = ["NL1", "NL2", "NL3", "NL4", "NL5"]
+[esios]
+request_interval_seconds = 6
 
-[features]
-history_days = 7
-event_lag_days = 2
-price_lag_days = 1
+[areas]
+cell_degrees = 0.5
+min_located_mw = 50
+
+# Open-Meteo weather grid
+[weather]
+grid_degrees = 1.0
+points_per_request = 10
+request_interval_seconds = 5
 
 [labels]
-settle_days = 1
+direction = "Bajar"
+restriction_types = ["SCB", "SCA", "RTD"]
+min_mwh = 5.0
+settle_days = 90
+
+[features]
+history_days = 28
+event_lag_days = 91
+use_ida3 = true
+
+# REE e-sios indicator ids
+[constraint_indicators]
+down_overload_base = 1791
+down_overload_contingency = 1793
+down_distribution = 1797
+down_voltage = 1795
+down_other = 1801
+phase1_up_total = 701
+phase1_down_total = 702
 
 [model]
 test_days = 60

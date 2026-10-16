@@ -1,120 +1,89 @@
-"""End-to-end tests from synthetic inputs through training, prediction and validation."""
-
-import dataclasses
 from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from grid_congestion import model, pipeline, schemas, validate
-from grid_congestion.synthetic import generate
+from congestion_es import estimator, ledger, pipeline, weather
+from congestion_es.areas import CAPACITY_COLUMNS
+from congestion_es.features import feature_columns
 
-
-@pytest.fixture
-def trained(config):
-    """Generate inputs, build the dataset and train a model."""
-    generate(config, start="2025-01-01", days=230, seed=11)
-    inputs = pipeline.load_inputs(config)
-    label_end = pd.Timestamp("2025-07-19")
-    dataset = pipeline.build(config, inputs, label_end)
-    bundle, report = model.train(config, dataset)
-    return inputs, dataset, bundle, report
+AREAS = ["37.50_-6.00", "38.50_-6.50", "41.00_-1.00"]
 
 
-def test_training_reports_holdout_scores(trained):
-    """Holdout report contains valid scores and a model version."""
-    _, _, bundle, report = trained
-    holdout = report["holdout"]
-    assert holdout["n"] > 0
-    assert 0.0 <= holdout["brier"] <= 1.0
-    assert holdout["roc_auc"] > 0.5
-    assert bundle["model_version"].startswith("hgb-")
-
-
-def test_model_round_trip_keeps_predictions(trained, config, tmp_path):
-    """A saved and reloaded model gives identical probabilities."""
-    _, dataset, bundle, _ = trained
-    path = model.save(bundle, tmp_path / "models")
-    assert path.exists()
-    reloaded = model.load(tmp_path / "models")
-    rows = dataset.head(50)
-    assert np.allclose(model.predict(bundle, rows), model.predict(reloaded, rows))
-
-
-def test_predict_day_matches_schema_and_threshold(trained, config):
-    """Prediction rows follow the ledger schema and the flag threshold."""
-    inputs, _, bundle, _ = trained
-    day = pd.Timestamp("2025-07-25")
-    dataset = pipeline.build(config, inputs, None)
-    issued = datetime(2025, 7, 24, 11, 0, tzinfo=timezone.utc)
-    predictions = pipeline.predict_day(config, bundle, dataset, day, issued)
-
-    assert list(predictions.columns) == schemas.PREDICTION_COLUMNS
-    assert len(predictions) == len(config.areas) * 24
-    assert predictions["risk_probability"].between(0, 1).all()
-    expected_flag = (predictions["risk_probability"] >= bundle["threshold"]).astype(int)
-    assert (predictions["risk_flag"] == expected_flag).all()
-
-
-def test_predict_unknown_day_raises(trained, config):
-    """Predicting a day without inputs raises an error."""
-    inputs, _, bundle, _ = trained
-    dataset = pipeline.build(config, inputs, None)
-    with pytest.raises(ValueError):
-        pipeline.predict_day(config, bundle, dataset, pd.Timestamp("1999-01-01"))
-
-
-def test_validation_uses_latest_prediction_and_settled_days(trained, config):
-    """Validation keeps the latest issue per key and only settled days."""
-    inputs, _, bundle, _ = trained
-    dataset = pipeline.build(config, inputs, None)
-    day = pd.Timestamp("2025-07-25")
-    early = pipeline.predict_day(
-        config, bundle, dataset, day, datetime(2025, 7, 24, 9, tzinfo=timezone.utc)
+def _inputs(config, days=200, seed=5, extra_labels=None):
+    """Synthetic inputs where congestion in the south-west follows the national contingency total."""
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2025-06-01", periods=days, freq="D")
+    national = pd.MultiIndex.from_product([dates, range(24)], names=["delivery_date", "hour"]).to_frame(index=False)
+    n = len(national)
+    market = national.assign(
+        da_price=rng.normal(60, 20, n), ida1_price=rng.normal(60, 20, n), ida2_price=rng.normal(60, 20, n),
+        ida3_price=rng.normal(60, 20, n), load_forecast_mw=rng.normal(28000, 3000, n),
+        wind_forecast_mw=rng.gamma(2, 3000, n), solar_forecast_mw=rng.gamma(2, 4000, n),
     )
-    late = pipeline.predict_day(
-        config, bundle, dataset, day, datetime(2025, 7, 24, 12, tzinfo=timezone.utc)
+    pressure = rng.gamma(1.5, 300, n)
+    constraints = national.copy()
+    for name in config.constraint_indicators:
+        constraints[name] = rng.gamma(1.5, 100, n)
+    constraints["down_overload_contingency"] = pressure
+
+    capacity = pd.DataFrame({"area": AREAS, "cell_lat": [37.75, 38.75, 41.25], "cell_lon": [-5.75, -6.25, -0.75]})
+    for column in CAPACITY_COLUMNS:
+        capacity[column] = [400.0, 300.0, 200.0]
+    capacity["mw_total"] = capacity[CAPACITY_COLUMNS].sum(axis=1)
+
+    rows = []
+    for (day, hour), value in zip(national[["delivery_date", "hour"]].itertuples(index=False), pressure):
+        if value > 500:
+            rows.append((day, hour, AREAS[0], value / 10))
+        if value > 900:
+            rows.append((day, hour, AREAS[1], value / 20))
+    attributed = pd.DataFrame(rows + (extra_labels or []), columns=["delivery_date", "hour", "area", "mwh"])
+    points, _ = weather.points_for(capacity, config.weather.grid_degrees)
+    forecast = national.merge(points[["point"]].drop_duplicates(), how="cross")
+    m = len(forecast)
+    forecast = forecast.assign(
+        wind_speed_100m=rng.gamma(2, 10, m), shortwave_radiation=rng.uniform(0, 900, m), temperature_2m=rng.normal(18, 6, m)
     )
-    ledger = pd.concat([early, late], ignore_index=True)
-    ledger["delivery_date"] = pd.to_datetime(ledger["delivery_date"])
-    ledger["issued_at"] = pd.to_datetime(ledger["issued_at"], utc=True)
-
-    settled = validate.latest_predictions(ledger, pd.Timestamp("2025-07-25"))
-    assert len(settled) == len(config.areas) * 24
-    assert (settled["issued_at"] == pd.Timestamp("2025-07-24 12:00", tz="UTC")).all()
-
-    unsettled = validate.latest_predictions(ledger, pd.Timestamp("2025-07-24"))
-    assert unsettled.empty
-
-
-def test_evaluate_flags_low_skill(trained, config):
-    """The skill alert fires only when skill is below the minimum."""
-    inputs, _, bundle, _ = trained
-    dataset = pipeline.build(config, inputs, None)
-    day = pd.Timestamp("2025-07-25")
-    issued = datetime(2025, 7, 24, 11, tzinfo=timezone.utc)
-    ledger = pipeline.predict_day(config, bundle, dataset, day, issued)
-    ledger["delivery_date"] = pd.to_datetime(ledger["delivery_date"])
-    ledger["issued_at"] = pd.to_datetime(ledger["issued_at"], utc=True)
-
-    lenient = dataclasses.replace(config.validation, min_skill=-10.0)
-    result = validate.evaluate(
-        dataclasses.replace(config, validation=lenient),
-        ledger,
-        inputs.events,
-        pd.Timestamp("2025-07-25"),
-        pd.Timestamp("2025-07-26"),
+    return pipeline.Inputs(
+        market=market, constraints=constraints, capacity=capacity, weather=forecast, points=points, attributed=attributed,
+        label_days=set(dates[: days - 20]), area_codes={a: i for i, a in enumerate(sorted(AREAS))}, coverage=0.7,
     )
-    assert result["alert"] is False
 
-    strict = dataclasses.replace(config.validation, min_skill=1.5)
-    result = validate.evaluate(
-        dataclasses.replace(config, validation=strict),
-        ledger,
-        inputs.events,
-        pd.Timestamp("2025-07-25"),
-        pd.Timestamp("2025-07-26"),
-    )
-    assert result["alert"] is True
-    assert result["window_n"] == len(config.areas) * 24
+
+def test_target_is_unknown_for_missing_days_and_after_label_end(config):
+    inputs = _inputs(config, days=40)
+    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-06-25"))
+    dates = dataset["delivery_date"]
+    assert dataset.loc[dates <= pd.Timestamp("2025-06-20"), "target"].notna().all()
+    assert dataset.loc[dates.between(pd.Timestamp("2025-06-21"), pd.Timestamp("2025-06-25")), "target"].isna().all()
+    assert dataset.loc[dates > pd.Timestamp("2025-06-25"), "target"].isna().all()
+
+
+def test_recent_congestion_does_not_leak_into_history_features(config):
+    base = _inputs(config, days=120)
+    day = pd.Timestamp("2025-09-20")
+    extra = [(day - pd.Timedelta(days=5), 12, AREAS[2], 999.0)]
+    changed = _inputs(config, days=120, extra_labels=extra)
+    columns = ["area_congested_hist", "area_congested_hist_long", "area_hour_congested_hist"]
+    a = pipeline.build(config, base, None)
+    b = pipeline.build(config, changed, None)
+    rows_a = a[(a["delivery_date"] == day) & (a["area"] == AREAS[2])][columns].fillna(-1)
+    rows_b = b[(b["delivery_date"] == day) & (b["area"] == AREAS[2])][columns].fillna(-1)
+    assert np.allclose(rows_a.to_numpy(), rows_b.to_numpy())
+
+
+def test_train_and_predict_rank_the_congested_cell_first(config):
+    inputs = _inputs(config)
+    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-12-17"))
+    bundle, report = pipeline.train(config, inputs, dataset)
+    assert report["holdout"]["roc_auc"] > 0.8
+    assert bundle["features"] == feature_columns(config)
+
+    day = pd.Timestamp("2025-12-10")
+    predictions = pipeline.predict_day(bundle, pipeline.build(config, inputs, None), day, datetime(2025, 12, 9, 12, tzinfo=timezone.utc))
+    assert list(predictions.columns) == ledger.PREDICTION_COLUMNS
+    assert len(predictions) == 24 * len(AREAS)
+    means = predictions.groupby("area")["risk_probability"].mean()
+    assert means.idxmax() == AREAS[0]
+    assert estimator.predict(bundle, dataset.head(5)).shape == (5,)
