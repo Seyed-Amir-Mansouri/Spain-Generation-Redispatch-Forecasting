@@ -19,6 +19,7 @@ class Paths:
     weather: Path
     unit_locations: Path
     manual_locations: Path
+    unit_aliases: Path
     model_dir: Path
     predictions: Path
     validation: Path
@@ -28,6 +29,8 @@ class Paths:
 class Areas:
     cell_degrees: float
     min_located_mw: float
+    estimate_unplaced: bool = False
+    estimate_top_cells: int = 3
 
 
 @dataclass(frozen=True)

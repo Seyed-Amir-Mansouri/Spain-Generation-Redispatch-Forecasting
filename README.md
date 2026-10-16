@@ -31,7 +31,11 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - Castilla y León, from opendata.jcyl.es: «©Junta de Castilla y León», available free at www.jcyl.es
      - Aragón, from ICEARAGON (Gobierno de Aragón)
 
-   OpenStreetMap's 220 and 400 kV substations are downloaded as well. Many solar and wind plants are named after the substation they connect to, so a solar or wind unit that matches no plant is placed at a substation whose name its code starts with, for example `FCAPARA` at Caparacena. This placement is refused when the unit's full name contradicts the substation, and it gets `low` confidence.
+   Two fallbacks follow for units that match no plant:
+   - **Municipality.** A unit whose name spells out a Spanish municipality, such as `PS FREGENAL DE LA SIERRA`, is placed there, using OpenStreetMap towns and villages that carry an INE code. Saints and landforms ("San Cristóbal", "Sierra Cabrera") and hydro plants are skipped.
+   - **Substation.** Many solar and wind plants are named after the 220 or 400 kV substation they connect to, so a solar or wind unit is placed at a substation whose name its code starts with, for example `FCAPARA` at Caparacena. The placement is refused when the unit's full name contradicts the substation.
+
+   Both fallbacks give `low` confidence. A low-confidence placement is undone when it lies more than 1.5° from every firmly placed plant of the same programming unit.
 
    How a match is made:
    - **Order of attempts:** exact name, then name without its group number, then close spelling, then all distinctive words present. Last, REE's own code is tried as a shortened plant name, so `FVTAGUS` matches Tagus and `AUREAFV` matches Aurea. This last step is accepted only when the capacities agree within a factor of 1.5.
@@ -40,12 +44,19 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
    - **Capacity check.** A match is refused when the listed plant is less than a quarter of the unit's capacity.
    - **Ambiguity.** When plants with the same name lie far apart, the one whose capacity is within a factor of 1.5 is chosen. If capacity cannot decide, the match is refused.
    - **Source order.** Global Energy Monitor and the regional maps are used only for plants that OpenStreetMap and Open Power System Data cannot place. Global Energy Monitor's short names often repeat across regions.
-   - **Hand-checked plants.** `reference/manual_locations.csv` overrides the matcher for large plants whose registry names are codes, and records the evidence for each choice.
+   - **Hand-checked plants.** `reference/manual_locations.csv` overrides the matcher for large plants whose registry names are codes, and records the evidence for each choice. A row can name a plant from one of the lists or, with origin `coordinates`, give the site's latitude and longitude.
+   - **Renamed units.** `reference/unit_aliases.csv` maps retired REE unit codes to the codes that replaced them, for example `ABO2` to `ABO2G`.
    - **Confidence.** Each unit gets one of three levels:
      - `high`: an exact or hand-checked match
      - `medium`: any other plant match
-     - `low`: placed at a substation
-3. **Attribution.** Each unit's redispatch is split across grid cells in proportion to the capacity of its located plants. Redispatch on unlocated plants and on cross-border units is dropped. `train` reports the share of redispatch that could be placed.
+     - `low`: placed at a municipality or substation
+3. **Attribution.**
+   - **Placed redispatch.** Each unit's redispatch is split across grid cells in proportion to the capacity of its located plants. Cross-border units are dropped.
+   - **Estimated redispatch.** When `estimate_unplaced` is on, the redispatch of units that could not be placed is estimated:
+     - **Matching.** Each unplaced unit's hourly series is correlated with every cell's placed redispatch. A small weight is added for cells that already hold the same technology.
+     - **Sharing.** The unit's energy is shared among its `estimate_top_cells` best cells. Plants behind the same grid limit are redispatched in the same hours, which is why this works.
+     - **Accuracy.** In a test that hid known units, the exact cell or a neighbour received about 55% of their energy, against under 1% for a random cell.
+   - **Report.** `train` reports the placed share and the estimated share separately.
 4. **Labels.** A cell-hour is congested when its attributed downward redispatch reaches `min_mwh`. Days with no downloaded file are left unknown instead of being counted as uncongested.
 5. **Features.**
    - **National inputs.** These are hourly series for the whole of Spain:
@@ -81,6 +92,7 @@ README.md
 pyproject.toml
 config.toml                     paths, areas, label rule, feature windows, indicators, model settings
 reference/manual_locations.csv  hand-checked plant locations
+reference/unit_aliases.csv      retired REE unit codes and their replacements
 congestion_es/
     config.py       loads config.toml into typed objects
     esios.py        throttled client for REE's e-sios API

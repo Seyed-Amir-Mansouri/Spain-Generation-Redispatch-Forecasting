@@ -49,3 +49,17 @@ def test_capacity_by_area_groups_technologies_and_applies_minimum():
     assert list(table.index) == ["38.00_-6.50", "43.00_-2.00"]
     assert table.loc["38.00_-6.50", "mw_solar"] == 60.0
     assert table.loc["43.00_-2.00", "mw_other"] == 1000.0
+
+
+def test_unplaced_units_go_to_the_cells_whose_redispatch_hours_they_follow():
+    hours = range(48)
+    rows = []
+    for h in hours:
+        rows.append(("2026-01-01", h, "A1", 10.0 if h % 2 else 0.0))
+        rows.append(("2026-01-01", h, "B1", 10.0 if h % 3 == 0 else 0.0))
+        rows.append(("2026-01-01", h, "X", 5.0 if h % 3 == 0 else 0.0))
+    redispatch = pd.DataFrame(rows, columns=["delivery_date", "hour", "unit", "mwh"])
+    shares = pd.DataFrame({"unit": ["A1", "B1"], "area": ["40.00_-4.00", "38.00_-6.00"], "share": [1.0, 1.0]})
+    capacity = pd.DataFrame({"area": ["40.00_-4.00", "38.00_-6.00"], "mw_total": [100.0, 100.0], "mw_solar": [100.0, 100.0]})
+    estimated = areas.estimate_shares(redispatch, shares, capacity, {"X": "Solar fotovoltaica"}, set(), top=1)
+    assert estimated.to_dict("records") == [{"unit": "X", "area": "38.00_-6.00", "share": 1.0}]

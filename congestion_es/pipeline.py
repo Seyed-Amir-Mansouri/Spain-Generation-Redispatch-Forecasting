@@ -23,6 +23,7 @@ class Inputs:
     label_days: set
     area_codes: dict[str, int]
     coverage: float
+    estimated: float = 0.0
 
 
 def _read_hourly(path) -> pd.DataFrame:
@@ -43,6 +44,15 @@ def load_inputs(config: Config) -> Inputs:
     redispatch, days = i90.load(
         config.resolve(config.paths.redispatch_dir), config.labels.direction, config.labels.restriction_types
     )
+    redispatch["unit"] = redispatch["unit"].replace(locations.load_aliases(config.resolve(config.paths.unit_aliases)))
+    placed = areas.coverage(redispatch, shares) if len(redispatch) else float("nan")
+    if config.areas.estimate_unplaced and len(redispatch):
+        cross_border = set(programming.loc[programming["unit_type"] == locations.CROSS_BORDER_TYPE, "code"])
+        estimated = areas.estimate_shares(
+            redispatch, shares, areas.capacity_by_area(units, size, 0.0),
+            programming.set_index("code")["technology"].astype(str).to_dict(), cross_border, config.areas.estimate_top_cells,
+        )
+        shares = pd.concat([shares, estimated], ignore_index=True)
     attributed = areas.attribute(redispatch, shares) if len(redispatch) else pd.DataFrame(columns=KEY + ["mwh"])
     points, _ = weather.points_for(capacity, config.weather.grid_degrees)
     return Inputs(
@@ -54,7 +64,8 @@ def load_inputs(config: Config) -> Inputs:
         attributed=attributed,
         label_days=set(days),
         area_codes={area: code for code, area in enumerate(sorted(capacity["area"]))},
-        coverage=areas.coverage(redispatch, shares) if len(redispatch) else float("nan"),
+        coverage=placed,
+        estimated=(areas.coverage(redispatch, shares) - placed) if len(redispatch) else 0.0,
     )
 
 
@@ -93,6 +104,7 @@ def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, 
     )
     report["areas"] = len(inputs.area_codes)
     report["redispatch_coverage"] = round(inputs.coverage, 3)
+    report["redispatch_estimated"] = round(inputs.estimated, 3)
     labelled = dataset[dataset["target"].notna()]
     report["labelled_days"] = int(labelled["delivery_date"].nunique())
     report["positive_rate"] = round(float(labelled["target"].mean()), 4) if len(labelled) else None

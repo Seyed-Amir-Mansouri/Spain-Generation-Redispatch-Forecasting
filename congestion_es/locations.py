@@ -215,6 +215,14 @@ def load_substations(folder: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def load_aliases(path: Path) -> dict[str, str]:
+    """Return the map from retired REE unit codes to the codes that replaced them."""
+    if not path.exists():
+        return {}
+    frame = pd.read_csv(path)
+    return dict(zip(frame["old_code"], frame["new_code"]))
+
+
 def load_places(folder: Path) -> pd.DataFrame:
     """Return Spanish towns and villages (those with an INE code) with a folded name, or an empty table."""
     path = folder / "osm_places.json"
@@ -626,13 +634,25 @@ def locate_units(
     unit_names = {} if programming is None else programming.set_index("code")["name"].to_dict()
     folded = reference["name"].map(fold)
     overrides = {}
+    points = {}
     for row in manual.itertuples(index=False):
+        if row.origin == "coordinates":
+            points[(row.level, row.code)] = (row.lat, row.lon, row.reference_name, row.confidence)
+            continue
         hits = reference.index[(reference["origin"] == row.origin) & (folded == fold(row.reference_name))]
         if len(hits):
             overrides[(row.level, row.code)] = (hits[0], row.confidence)
 
     rows = []
     for unit, alone in zip(physical.itertuples(index=False), single):
+        point = points.get(("UF", unit.code)) or points.get(("UP", unit.programming_unit))
+        if point:
+            rows.append({
+                "physical_unit": unit.code, "programming_unit": unit.programming_unit, "technology": unit.technology,
+                "max_mw": unit.max_mw, "lat": point[0], "lon": point[1], "method": "manual",
+                "matched_name": point[2], "confidence": point[3],
+            })
+            continue
         override = overrides.get(("UF", unit.code)) or overrides.get(("UP", unit.programming_unit))
         if override:
             idx, method, confidence = override[0], "manual", override[1]
