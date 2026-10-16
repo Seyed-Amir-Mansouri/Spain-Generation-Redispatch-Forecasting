@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import pandas as pd
 
-MARKET_KEY = ["delivery_date", "hour"]
+MARKET_KEY = ["delivery_date", "period"]
 
 
-def hourly_mean(series: pd.Series, column: str, end: pd.Timestamp) -> pd.DataFrame:
-    """Resample a tz-aware series to local hourly means, excluding the end boundary."""
+def add_period(frame: pd.DataFrame, stamps: pd.Series) -> pd.DataFrame:
+    """Add the local delivery date and quarter of the day (0-95) of tz-aware local timestamps."""
+    frame["delivery_date"] = stamps.dt.normalize().dt.tz_localize(None).to_numpy()
+    frame["period"] = (stamps.dt.hour * 4 + stamps.dt.minute // 15).to_numpy()
+    return frame
+
+
+def quarter_mean(series: pd.Series, column: str, end: pd.Timestamp) -> pd.DataFrame:
+    """Resample a tz-aware series to local quarter-hour means, excluding the end boundary."""
     series = series[series.index < end]
-    hourly = series.resample("1h").mean()
-    frame = hourly.rename(column).reset_index()
-    frame = frame.rename(columns={frame.columns[0]: "timestamp"})
-    frame["delivery_date"] = frame["timestamp"].dt.normalize().dt.tz_localize(None)
-    frame["hour"] = frame["timestamp"].dt.hour
-    return frame[MARKET_KEY + [column]]
+    quarters = series.resample("15min").mean()
+    frame = quarters.rename(column).reset_index()
+    stamps = frame[frame.columns[0]]
+    frame = add_period(frame, stamps)
+    return frame.groupby(MARKET_KEY, as_index=False)[column].mean()

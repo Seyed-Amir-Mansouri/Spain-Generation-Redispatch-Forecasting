@@ -1,16 +1,20 @@
 [paths]
 registry_dir = "data/raw/registry"
 plants_dir = "data/raw/plants"
-redispatch_dir = "data/raw/i90"
-market = "data/raw/market.csv"
-constraints = "data/raw/constraints.csv"
-weather = "data/raw/weather.csv"
+redispatch_dir = "data/raw/i90_qh"
+market = "data/raw/market_qh.csv"
+constraints = "data/raw/constraints_qh.csv"
+weather = "data/raw/weather_qh.csv"
 unit_locations = "data/processed/unit_locations.csv"
 manual_locations = "reference/manual_locations.csv"
 unit_aliases = "reference/unit_aliases.csv"
 model_dir = "models"
 predictions = "outputs/predictions.csv"
 validation = "outputs/validation_history.csv"
+
+# first day of 15-minute data
+[data]
+start = "2025-10-01"
 
 [esios]
 request_interval_seconds = 6
@@ -19,7 +23,7 @@ request_interval_seconds = 6
 cell_degrees = 0.5
 min_located_mw = 50
 estimate_unplaced = true
-estimate_top_cells = 3
+estimate_top_cells = 1
 
 # Open-Meteo weather grid
 [weather]
@@ -30,7 +34,7 @@ request_interval_seconds = 5
 [labels]
 direction = "Bajar"
 restriction_types = ["SCB", "SCA", "RTD"]
-min_mwh = 5.0
+min_mwh = 1.25
 settle_days = 90
 
 [features]
@@ -55,6 +59,7 @@ learning_rate = 0.05
 max_iter = 300
 max_leaf_nodes = 31
 random_state = 42
+negative_fraction = 0.25
 
 [validation]
 window_days = 14

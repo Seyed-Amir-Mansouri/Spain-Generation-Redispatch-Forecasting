@@ -13,7 +13,8 @@ import pandas as pd
 ARCHIVE_ID = 34
 PHASE_ONE_SHEET = "03"
 TIMEZONE = "Europe/Madrid"
-COLUMNS = ["delivery_date", "hour", "unit", "direction", "restriction", "mwh"]
+COLUMNS = ["delivery_date", "period", "unit", "direction", "restriction", "mwh"]
+PERIODS_PER_DAY = 96
 
 
 def _fold(text) -> str:
@@ -41,16 +42,17 @@ def _is_period(header) -> bool:
     return text.isdigit() or bool(re.match(r"^\d{1,2}-\d{1,2}", text))
 
 
-def period_hours(day: date, periods: int) -> np.ndarray:
-    """Map each period of a delivery day to its local clock hour, handling clock changes."""
-    step = 15 if periods > 30 else 60
+def period_slots(day: date, periods: int) -> np.ndarray:
+    """Map each quarter-hour of a delivery day to its local quarter of the day (0-95), handling clock changes."""
+    if periods <= 30:
+        raise ValueError(f"{day}: hourly data, expected quarter-hours")
     start = pd.Timestamp(day).tz_localize(TIMEZONE).tz_convert("UTC")
-    instants = start + pd.to_timedelta(np.arange(periods) * step, unit="min")
-    return instants.tz_convert(TIMEZONE).hour.to_numpy()
+    local = (start + pd.to_timedelta(np.arange(periods) * 15, unit="min")).tz_convert(TIMEZONE)
+    return (local.hour * 4 + local.minute // 15).to_numpy()
 
 
 def parse_rows(rows: list[list], day: date) -> pd.DataFrame:
-    """Turn the rows of a redispatch sheet into hourly MWh per unit, direction and restriction type."""
+    """Turn the rows of a redispatch sheet into quarter-hour MWh per unit, direction and restriction type."""
     start = next((i for i, row in enumerate(rows) if row and _fold(row[0]) == "redespacho"), None)
     if start is None:
         return pd.DataFrame(columns=COLUMNS)
@@ -59,7 +61,7 @@ def parse_rows(rows: list[list], day: date) -> pd.DataFrame:
     direction_col = header.index("sentido")
     restriction_col = header.index("tipo restriccion")
     period_cols = [i for i, cell in enumerate(rows[start]) if _is_period(cell)]
-    hours = period_hours(day, len(period_cols))
+    slots = period_slots(day, len(period_cols))
 
     records = []
     for row in rows[start + 1:]:
@@ -71,10 +73,10 @@ def parse_rows(rows: list[list], day: date) -> pd.DataFrame:
         unit = str(row[unit_col]).strip()
         direction = str(row[direction_col]).strip()
         restriction = str(row[restriction_col]).strip()
-        for hour in np.unique(hours):
-            mwh = values[hours == hour].sum()
+        for slot in np.unique(slots):
+            mwh = values[slots == slot].sum()
             if mwh > 0:
-                records.append((pd.Timestamp(day), int(hour), unit, direction, restriction, mwh))
+                records.append((pd.Timestamp(day), int(slot), unit, direction, restriction, mwh))
     frame = pd.DataFrame(records, columns=COLUMNS)
     return frame.groupby(COLUMNS[:-1], as_index=False)["mwh"].sum()
 
@@ -112,7 +114,7 @@ def day_path(folder: Path, day: date) -> Path:
 
 
 def download(client, days, folder: Path, log=print) -> dict:
-    """Download and extract each missing day, keeping only the compact redispatch table."""
+    """Download and extract each missing day, keeping only the compact quarter-hour redispatch table."""
     folder.mkdir(parents=True, exist_ok=True)
     stats = {"downloaded": 0, "cached": 0, "unavailable": 0}
     for day in days:

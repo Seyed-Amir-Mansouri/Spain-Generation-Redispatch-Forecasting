@@ -36,7 +36,7 @@ def test_shares_split_by_located_capacity_and_skip_cross_border_units():
 def test_attribute_and_coverage():
     shares = areas.unit_shares(_units(), _programming(), 0.5)
     redispatch = pd.DataFrame({
-        "delivery_date": pd.to_datetime(["2026-07-01", "2026-07-01"]), "hour": [12, 12],
+        "delivery_date": pd.to_datetime(["2026-07-01", "2026-07-01"]), "period": [48, 48],
         "unit": ["PORT", "XFRA"], "mwh": [100.0, 50.0],
     })
     attributed = areas.attribute(redispatch, shares).set_index("area")["mwh"]
@@ -51,14 +51,13 @@ def test_capacity_by_area_groups_technologies_and_applies_minimum():
     assert table.loc["43.00_-2.00", "mw_other"] == 1000.0
 
 
-def test_unplaced_units_go_to_the_cells_whose_redispatch_hours_they_follow():
-    hours = range(48)
+def test_unplaced_units_go_to_the_cells_whose_redispatch_periods_they_follow():
     rows = []
-    for h in hours:
+    for h in range(96):
         rows.append(("2026-01-01", h, "A1", 10.0 if h % 2 else 0.0))
         rows.append(("2026-01-01", h, "B1", 10.0 if h % 3 == 0 else 0.0))
         rows.append(("2026-01-01", h, "X", 5.0 if h % 3 == 0 else 0.0))
-    redispatch = pd.DataFrame(rows, columns=["delivery_date", "hour", "unit", "mwh"])
+    redispatch = pd.DataFrame(rows, columns=["delivery_date", "period", "unit", "mwh"])
     shares = pd.DataFrame({"unit": ["A1", "B1"], "area": ["40.00_-4.00", "38.00_-6.00"], "share": [1.0, 1.0]})
     capacity = pd.DataFrame({"area": ["40.00_-4.00", "38.00_-6.00"], "mw_total": [100.0, 100.0], "mw_solar": [100.0, 100.0]})
     estimated = areas.estimate_shares(redispatch, shares, capacity, {"X": "Solar fotovoltaica"}, set(), top=1)

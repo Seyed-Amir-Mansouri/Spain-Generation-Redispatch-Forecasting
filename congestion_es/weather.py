@@ -10,12 +10,14 @@ import urllib.request
 import numpy as np
 import pandas as pd
 
+from .timeseries import add_period
+
 ARCHIVE_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 LIVE_URL = "https://api.open-meteo.com/v1/forecast"
 VARIABLES = ("wind_speed_100m", "shortwave_radiation", "temperature_2m")
 TIMEZONE = "Europe/Madrid"
 LIVE_DAYS = 7
-KEY = ["delivery_date", "hour", "point"]
+KEY = ["delivery_date", "period", "point"]
 
 
 def point_id(lat: float, lon: float, size: float) -> str:
@@ -53,19 +55,19 @@ def _request(url: str, params: dict, opener=urllib.request.urlopen, sleep=time.s
     return []
 
 
-def to_hourly(responses: list[dict], points: list[str]) -> pd.DataFrame:
-    """Convert Open-Meteo UTC hourly series into local delivery hours per weather point."""
+def to_quarters(responses: list[dict], points: list[str]) -> pd.DataFrame:
+    """Interpolate Open-Meteo UTC hourly series to local quarter-hours per weather point."""
     frames = []
     for point, response in zip(points, responses):
         hourly = response["hourly"]
-        stamps = pd.to_datetime(hourly["time"]).tz_localize("UTC").tz_convert(TIMEZONE)
-        frame = pd.DataFrame({name: hourly.get(name) for name in VARIABLES})
-        frame["delivery_date"] = stamps.normalize().tz_localize(None)
-        frame["hour"] = stamps.hour
+        index = pd.to_datetime(hourly["time"]).tz_localize("UTC")
+        values = pd.DataFrame({name: pd.to_numeric(pd.Series(hourly.get(name)), errors="coerce").to_numpy() for name in VARIABLES}, index=index)
+        values = values.resample("15min").interpolate("linear")
+        frame = values.reset_index(drop=True)
+        frame = add_period(frame, pd.Series(values.index.tz_convert(TIMEZONE)))
         frame["point"] = point
         frames.append(frame)
     frame = pd.concat(frames, ignore_index=True)
-    frame[list(VARIABLES)] = frame[list(VARIABLES)].apply(pd.to_numeric, errors="coerce")
     return frame.groupby(KEY, as_index=False)[list(VARIABLES)].mean()
 
 
@@ -79,7 +81,7 @@ def fetch(
     request=_request,
     sleep=time.sleep,
 ) -> pd.DataFrame:
-    """Fetch hourly forecasts for every weather point and local delivery day in [start, end)."""
+    """Fetch forecasts for every weather point and local delivery day in [start, end), at quarter-hours."""
     live_from = today - pd.Timedelta(days=LIVE_DAYS)
     spans = []
     if start < min(end, live_from):
@@ -99,7 +101,7 @@ def fetch(
                 "hourly": ",".join(VARIABLES),
                 "timezone": "GMT",
             }
-            part = to_hourly(request(url, params), chunk["point"].tolist())
+            part = to_quarters(request(url, params), chunk["point"].tolist())
             frames.append(part[(part["delivery_date"] >= first) & (part["delivery_date"] < last)])
             sleep(interval_seconds)
     if not frames:

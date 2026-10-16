@@ -60,7 +60,7 @@ def cmd_fetch_units(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch_market(args: argparse.Namespace) -> None:
-    """Fetch hourly ENTSO-E day-ahead and intraday prices and national forecasts."""
+    """Fetch quarter-hour ENTSO-E day-ahead prices and national forecasts."""
     config = load_config(args.config)
     prices = market.fetch_market(market.build_client(_key("ENTSOE_API_KEY")), _date(args.start), _date(args.end))
     frame = market.upsert(config.resolve(config.paths.market), prices)
@@ -68,7 +68,7 @@ def cmd_fetch_market(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch_intraday(args: argparse.Namespace) -> None:
-    """Fetch hourly Spanish IDA1-3 prices from OMIE and merge them into the market file."""
+    """Fetch quarter-hour Spanish IDA1-3 prices from OMIE and merge them into the market file."""
     config = load_config(args.config)
     days = [d.date() for d in pd.date_range(_date(args.start), _date(args.end) - pd.Timedelta(days=1), freq="D")]
     prices = omie.fetch_intraday(days)
@@ -80,7 +80,7 @@ def cmd_fetch_intraday(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch_weather(args: argparse.Namespace) -> None:
-    """Fetch hourly Open-Meteo forecasts for the weather grid covering every congestion cell."""
+    """Fetch Open-Meteo forecasts for the weather grid covering every congestion cell, at quarter-hours."""
     config = load_config(args.config)
     units = pd.read_csv(config.resolve(config.paths.unit_locations))
     capacity = areas.capacity_by_area(units, config.areas.cell_degrees, config.areas.min_located_mw)
@@ -96,7 +96,7 @@ def cmd_fetch_weather(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch_constraints(args: argparse.Namespace) -> None:
-    """Fetch REE's national day-ahead constraint totals per hour."""
+    """Fetch REE's national day-ahead constraint totals per quarter-hour."""
     config = load_config(args.config)
     totals = market.fetch_constraints(_esios(config), config.constraint_indicators, _date(args.start), _date(args.end))
     frame = market.upsert(config.resolve(config.paths.constraints), totals)
@@ -127,8 +127,8 @@ def cmd_predict(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     bundle = estimator.load(config.resolve(config.paths.model_dir))
     inputs = pipeline.load_inputs(config)
-    dataset = pipeline.build(config, inputs, None, bundle["area_codes"])
     day = _date(args.date)
+    dataset = pipeline.build(config, inputs, None, bundle["area_codes"], [day])
     issued_at = datetime.fromisoformat(args.issued_at) if args.issued_at else None
     predictions = pipeline.predict_day(bundle, dataset, day, issued_at)
     path = config.resolve(config.paths.predictions)
@@ -136,7 +136,7 @@ def cmd_predict(args: argparse.Namespace) -> None:
 
     top = (predictions.groupby("area")["risk_probability"].max().sort_values(ascending=False).head(args.top))
     size = bundle["cell_degrees"]
-    print(f"{len(predictions)} rows for {day:%Y-%m-%d}; highest-risk cells (centre lat, lon, max hourly probability):")
+    print(f"{len(predictions)} rows for {day:%Y-%m-%d}; highest-risk cells (centre lat, lon, max 15-minute probability):")
     for area, probability in top.items():
         lat, lon = areas.cell_center(area, size)
         print(f"  {area}  ({lat:.2f}, {lon:.2f})  {probability:.2f}")

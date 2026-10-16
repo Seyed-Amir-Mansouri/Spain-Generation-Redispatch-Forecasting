@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .timeseries import MARKET_KEY, hourly_mean
+from .timeseries import MARKET_KEY, quarter_mean
 
 AREA = "ES"
 TIMEZONE = "Europe/Madrid"
@@ -39,7 +39,7 @@ def _safe(query, *args, **kwargs):
 
 
 def fetch_market(client, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Fetch hourly day-ahead prices and load, wind and solar forecasts for Spain from ENTSO-E."""
+    """Fetch quarter-hour day-ahead prices and load, wind and solar forecasts for Spain from ENTSO-E."""
     frames = []
     for first, last in months(start, end):
         a, b = first.tz_localize(TIMEZONE), last.tz_localize(TIMEZONE)
@@ -54,7 +54,7 @@ def fetch_market(client, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame
                 series["wind_forecast_mw"] = sum(wind)
             if "Solar" in renewables:
                 series["solar_forecast_mw"] = renewables["Solar"]
-        parts = [hourly_mean(values, name, b) for name, values in series.items() if values is not None]
+        parts = [quarter_mean(values, name, b) for name, values in series.items() if values is not None]
         if not parts:
             continue
         month = parts[0]
@@ -66,14 +66,14 @@ def fetch_market(client, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame
 
 
 def fetch_constraints(client, indicators: dict[str, int], start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Fetch REE's national day-ahead constraint energy per hour for each configured indicator."""
+    """Fetch REE's national day-ahead constraint energy per quarter-hour for each configured indicator."""
     days = pd.date_range(start, end - pd.Timedelta(days=1), freq="D")
-    frame = pd.MultiIndex.from_product([days, range(24)], names=MARKET_KEY).to_frame(index=False)
+    frame = pd.MultiIndex.from_product([days, range(96)], names=MARKET_KEY).to_frame(index=False)
     for name, indicator_id in indicators.items():
         parts = [client.indicator(indicator_id, first.date(), (last - pd.Timedelta(days=1)).date()) for first, last in months(start, end)]
         values = pd.concat(parts, ignore_index=True).rename(columns={"value": name})
         values["delivery_date"] = pd.to_datetime(values["delivery_date"])
-        values["hour"] = values["hour"].astype(int)
+        values["period"] = values["period"].astype(int)
         values[name] = values[name].abs()
         frame = frame.merge(values, on=MARKET_KEY, how="left")
         frame[name] = frame[name].fillna(0.0)
@@ -81,8 +81,8 @@ def fetch_constraints(client, indicators: dict[str, int], start: pd.Timestamp, e
 
 
 def upsert(path: Path, frame: pd.DataFrame, key: list[str] = MARKET_KEY) -> pd.DataFrame:
-    """Merge new hourly values into a CSV column by column, keeping other columns of existing rows."""
-    frame = frame.assign(delivery_date=pd.to_datetime(frame["delivery_date"]), hour=frame["hour"].astype(int))
+    """Merge new values into a CSV column by column, keeping other columns of existing rows."""
+    frame = frame.assign(delivery_date=pd.to_datetime(frame["delivery_date"]), period=frame["period"].astype(int))
     values = [column for column in frame.columns if column not in key]
     frame[values] = frame[values].apply(pd.to_numeric, errors="coerce")
     if path.exists():

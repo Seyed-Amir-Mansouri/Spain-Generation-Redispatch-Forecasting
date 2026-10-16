@@ -8,6 +8,8 @@ from datetime import date
 
 import pandas as pd
 
+from .timeseries import MARKET_KEY, add_period
+
 BASE_URL = "https://api.esios.ree.es"
 TIMEZONE = "Europe/Madrid"
 
@@ -42,13 +44,13 @@ class Client:
             self._last = self.clock()
 
     def indicator(self, indicator_id: int, start: date, end: date) -> pd.DataFrame:
-        """Return an indicator's peninsular values between two dates as hourly local sums."""
+        """Return an indicator's peninsular values between two dates as local quarter-hour sums."""
         path = (
             f"/indicators/{indicator_id}"
             f"?start_date={start:%Y-%m-%d}T00:00:00&end_date={end:%Y-%m-%d}T23:59:59"
         )
         values = json.loads(self.get(path))["indicator"]["values"]
-        return hourly_values(values)
+        return quarter_values(values)
 
     def archive(self, archive_id: int, day: date) -> bytes | None:
         """Download one day's file archive, or None when REE has no file for that day."""
@@ -65,17 +67,17 @@ class Client:
         return json.loads(self.get(f"/archives/{archive_id}/download_json?locale=es").decode("utf-8-sig"))
 
 
-def hourly_values(values: list[dict]) -> pd.DataFrame:
-    """Sum indicator values per local delivery date and hour, keeping the peninsular system only."""
+def quarter_values(values: list[dict]) -> pd.DataFrame:
+    """Sum indicator values per local delivery date and quarter of the day, keeping the peninsular system only."""
     frame = pd.DataFrame(values)
     if frame.empty:
         return pd.DataFrame({
             "delivery_date": pd.Series(dtype="datetime64[ns]"),
-            "hour": pd.Series(dtype="int64"),
+            "period": pd.Series(dtype="int64"),
             "value": pd.Series(dtype="float64"),
         })
     if "geo_name" in frame and (frame["geo_name"] == "Península").any():
         frame = frame[frame["geo_name"] == "Península"]
     stamps = pd.to_datetime(frame["datetime"], utc=True).dt.tz_convert(TIMEZONE)
-    frame = frame.assign(delivery_date=stamps.dt.normalize().dt.tz_localize(None), hour=stamps.dt.hour)
-    return frame.groupby(["delivery_date", "hour"], as_index=False)["value"].sum()
+    frame = add_period(frame.copy(), stamps)
+    return frame.groupby(MARKET_KEY, as_index=False)["value"].sum()

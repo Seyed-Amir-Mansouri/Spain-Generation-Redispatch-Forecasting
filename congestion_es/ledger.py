@@ -6,8 +6,8 @@ import pandas as pd
 
 from . import metrics
 
-PREDICTION_COLUMNS = ["delivery_date", "hour", "area", "issued_at", "model_version", "risk_probability", "risk_flag"]
-KEY = ["delivery_date", "hour", "area"]
+PREDICTION_COLUMNS = ["delivery_date", "period", "area", "issued_at", "model_version", "risk_probability", "risk_flag"]
+KEY = ["delivery_date", "period", "area"]
 
 
 def append(predictions: pd.DataFrame, path: Path) -> None:

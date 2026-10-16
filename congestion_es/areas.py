@@ -66,11 +66,13 @@ def estimate_shares(
     capacity: pd.DataFrame,
     technology: dict[str, str],
     excluded: set[str],
-    top: int = 3,
+    top: int = 1,
     prior_weight: float = 0.02,
+    neighbourhood: bool = True,
+    size: float = 0.5,
 ) -> pd.DataFrame:
-    """Share each unit's unplaced redispatch among the cells whose redispatch hours it follows most closely."""
-    key = ["delivery_date", "hour"]
+    """Give each unit's unplaced redispatch to the cells whose redispatch periods, alone and with their neighbours, it follows most closely."""
+    key = ["delivery_date", "period"]
     placed = shares.groupby("unit")["share"].sum()
     remaining = (1 - placed.reindex(redispatch["unit"].unique()).fillna(0)).clip(lower=0)
     remaining = remaining[(remaining > 0.01) & ~remaining.index.isin(excluded)]
@@ -82,6 +84,11 @@ def estimate_shares(
     cells = cells.reindex(units.index).fillna(0.0)
     standard = lambda frame: (frame - frame.mean()) / frame.std().replace(0, 1)
     correlation = standard(units).T @ standard(cells) / len(units)
+    if neighbourhood:
+        corners = [tuple(float(v) for v in area.split("_")) for area in cells.columns]
+        near = np.array([[max(abs(a[0] - b[0]), abs(a[1] - b[1])) <= size + 1e-9 for b in corners] for a in corners], dtype=float)
+        around = pd.DataFrame(cells.to_numpy() @ near, index=cells.index, columns=cells.columns)
+        correlation = correlation + standard(units).T @ standard(around) / len(units)
     by_cell = capacity.set_index("area")
     rows = []
     for unit, row in correlation.iterrows():
@@ -95,10 +102,10 @@ def estimate_shares(
 
 
 def attribute(redispatch: pd.DataFrame, shares: pd.DataFrame) -> pd.DataFrame:
-    """Distribute unit redispatch to grid cells and sum MWh per cell and hour."""
+    """Distribute unit redispatch to grid cells and sum MWh per cell and quarter-hour."""
     merged = redispatch.merge(shares, on="unit", how="inner")
     merged["mwh"] = merged["mwh"] * merged["share"]
-    return merged.groupby(["delivery_date", "hour", "area"], as_index=False)["mwh"].sum()
+    return merged.groupby(["delivery_date", "period", "area"], as_index=False)["mwh"].sum()
 
 
 def coverage(redispatch: pd.DataFrame, shares: pd.DataFrame) -> float:

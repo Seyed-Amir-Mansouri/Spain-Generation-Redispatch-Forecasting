@@ -12,13 +12,14 @@ def test_cells_map_into_coarser_weather_squares():
     assert centres.set_index("point").loc["38.00_-7.00", ["lat", "lon"]].tolist() == [38.5, -6.5]
 
 
-def test_to_hourly_converts_utc_to_local_hours_on_a_clock_change_day():
-    times = pd.date_range("2025-10-25 22:00", "2025-10-26 23:00", freq="h", inclusive="left").strftime("%Y-%m-%dT%H:%M").tolist()
+def test_to_quarters_interpolates_utc_hours_to_local_quarters_on_a_clock_change_day():
+    times = pd.date_range("2025-10-25 22:00", "2025-10-27 01:00", freq="h", inclusive="left").strftime("%Y-%m-%dT%H:%M").tolist()
     response = {"hourly": {"time": times, "wind_speed_100m": list(range(len(times))), "shortwave_radiation": [0] * len(times), "temperature_2m": [10] * len(times)}}
-    frame = weather.to_hourly([response], ["p"])
-    day = frame[frame["delivery_date"] == pd.Timestamp("2025-10-26")]
-    assert len(day) == 24
-    assert day.loc[day["hour"] == 2, "wind_speed_100m"].item() == 2.5
+    frame = weather.to_quarters([response], ["p"])
+    day = frame[frame["delivery_date"] == pd.Timestamp("2025-10-26")].set_index("period")["wind_speed_100m"]
+    assert len(day) == 96
+    assert day[8] == 2.5
+    assert day[9] == 2.75
 
 
 def test_fetch_uses_the_archive_for_history_and_the_live_service_for_recent_days():
@@ -35,7 +36,7 @@ def test_fetch_uses_the_archive_for_history_and_the_live_service_for_recent_days
     assert [c[0] for c in calls] == [weather.ARCHIVE_URL, weather.LIVE_URL]
     assert frame["delivery_date"].min() == pd.Timestamp("2026-10-01")
     assert frame["delivery_date"].max() == pd.Timestamp("2026-10-15")
-    assert len(frame) == 15 * 24
+    assert len(frame) == 15 * 96
 
 
 def test_output_proxies_follow_simple_power_curves():
@@ -45,11 +46,11 @@ def test_output_proxies_follow_simple_power_curves():
 
 def test_add_weather_computes_expected_output_and_national_share():
     frame = pd.DataFrame({
-        "delivery_date": pd.to_datetime(["2026-07-01"] * 2), "hour": [12, 12], "area": ["a", "b"],
+        "delivery_date": pd.to_datetime(["2026-07-01"] * 2), "period": [48, 48], "area": ["a", "b"],
         "mw_wind": [0.0, 0.0], "mw_solar": [100.0, 300.0],
     })
     points = pd.DataFrame({"area": ["a", "b"], "point": ["p", "p"]})
-    forecast = pd.DataFrame({"delivery_date": pd.to_datetime(["2026-07-01"]), "hour": [12], "point": ["p"], "wind_speed_100m": [10.0], "shortwave_radiation": [800.0], "temperature_2m": [30.0]})
+    forecast = pd.DataFrame({"delivery_date": pd.to_datetime(["2026-07-01"]), "period": [48], "point": ["p"], "wind_speed_100m": [10.0], "shortwave_radiation": [800.0], "temperature_2m": [30.0]})
     result = add_weather(frame, forecast, points).set_index("area")
     assert result.loc["b", "expected_solar_mw"] == 240.0
     assert result.loc["a", "expected_renewable_share"] == 0.25

@@ -14,7 +14,7 @@ def _inputs(config, days=200, seed=5, extra_labels=None):
     """Synthetic inputs where congestion in the south-west follows the national contingency total."""
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2025-06-01", periods=days, freq="D")
-    national = pd.MultiIndex.from_product([dates, range(24)], names=["delivery_date", "hour"]).to_frame(index=False)
+    national = pd.MultiIndex.from_product([dates, range(96)], names=["delivery_date", "period"]).to_frame(index=False)
     n = len(national)
     market = national.assign(
         da_price=rng.normal(60, 20, n), ida1_price=rng.normal(60, 20, n), ida2_price=rng.normal(60, 20, n),
@@ -33,12 +33,12 @@ def _inputs(config, days=200, seed=5, extra_labels=None):
     capacity["mw_total"] = capacity[CAPACITY_COLUMNS].sum(axis=1)
 
     rows = []
-    for (day, hour), value in zip(national[["delivery_date", "hour"]].itertuples(index=False), pressure):
+    for (day, period), value in zip(national[["delivery_date", "period"]].itertuples(index=False), pressure):
         if value > 500:
-            rows.append((day, hour, AREAS[0], value / 10))
+            rows.append((day, period, AREAS[0], value / 10))
         if value > 900:
-            rows.append((day, hour, AREAS[1], value / 20))
-    attributed = pd.DataFrame(rows + (extra_labels or []), columns=["delivery_date", "hour", "area", "mwh"])
+            rows.append((day, period, AREAS[1], value / 20))
+    attributed = pd.DataFrame(rows + (extra_labels or []), columns=["delivery_date", "period", "area", "mwh"])
     points, _ = weather.points_for(capacity, config.weather.grid_degrees)
     forecast = national.merge(points[["point"]].drop_duplicates(), how="cross")
     m = len(forecast)
@@ -63,9 +63,9 @@ def test_target_is_unknown_for_missing_days_and_after_label_end(config):
 def test_recent_congestion_does_not_leak_into_history_features(config):
     base = _inputs(config, days=120)
     day = pd.Timestamp("2025-09-20")
-    extra = [(day - pd.Timedelta(days=5), 12, AREAS[2], 999.0)]
+    extra = [(day - pd.Timedelta(days=5), 48, AREAS[2], 999.0)]
     changed = _inputs(config, days=120, extra_labels=extra)
-    columns = ["area_congested_hist", "area_congested_hist_long", "area_hour_congested_hist"]
+    columns = ["area_congested_hist", "area_congested_hist_long", "area_period_congested_hist"]
     a = pipeline.build(config, base, None)
     b = pipeline.build(config, changed, None)
     rows_a = a[(a["delivery_date"] == day) & (a["area"] == AREAS[2])][columns].fillna(-1)
@@ -83,7 +83,16 @@ def test_train_and_predict_rank_the_congested_cell_first(config):
     day = pd.Timestamp("2025-12-10")
     predictions = pipeline.predict_day(bundle, pipeline.build(config, inputs, None), day, datetime(2025, 12, 9, 12, tzinfo=timezone.utc))
     assert list(predictions.columns) == ledger.PREDICTION_COLUMNS
-    assert len(predictions) == 24 * len(AREAS)
+    assert len(predictions) == 96 * len(AREAS)
     means = predictions.groupby("area")["risk_probability"].mean()
     assert means.idxmax() == AREAS[0]
     assert estimator.predict(bundle, dataset.head(5)).shape == (5,)
+
+
+def test_negative_sampling_keeps_positives_and_reweights_negatives():
+    frame = pd.DataFrame({"target": [1.0] * 100 + [0.0] * 10000})
+    kept, weights = estimator._sample(frame, 0.25, 0)
+    assert (kept["target"] == 1).sum() == 100
+    assert abs((kept["target"] == 0).sum() - 2500) < 200
+    assert set(weights[kept["target"].to_numpy() == 0]) == {4.0}
+    assert abs(weights.sum() - len(frame)) < 800

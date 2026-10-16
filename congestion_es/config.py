@@ -4,6 +4,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+import pandas as pd
+
 from .estimator import Settings
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config.toml"
@@ -30,7 +32,7 @@ class Areas:
     cell_degrees: float
     min_located_mw: float
     estimate_unplaced: bool = False
-    estimate_top_cells: int = 3
+    estimate_top_cells: int = 1
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class Validation:
 class Config:
     root: Path
     paths: Paths
+    start: pd.Timestamp
     request_interval_seconds: float
     areas: Areas
     weather: Weather
@@ -88,6 +91,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
     return Config(
         root=path.parent,
         paths=Paths(**{key: Path(value) for key, value in raw["paths"].items()}),
+        start=pd.Timestamp(raw["data"]["start"]),
         request_interval_seconds=float(raw["esios"]["request_interval_seconds"]),
         areas=Areas(**raw["areas"]),
         weather=Weather(**raw["weather"]),
