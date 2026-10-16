@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from . import areas, estimator, i90, ledger, locations, weather
 from .config import Config
 from .features import CATEGORICAL, KEY, build_dataset, feature_columns
+from .timeseries import hours_to_quarters
 
 MAX_CATEGORIES = 254
 
@@ -26,12 +28,29 @@ class Inputs:
     estimated: float = 0.0
 
 
-def _read_table(path, start: pd.Timestamp) -> pd.DataFrame:
-    """Read a quarter-hour CSV written by the fetch commands, from the first day of 15-minute data."""
+def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Read a CSV written by the fetch commands, keeping delivery dates from start up to end."""
     if not path.exists():
         raise FileNotFoundError(f"Input file not found: {path}; run the fetch commands first")
     frame = pd.read_csv(path, parse_dates=["delivery_date"])
-    return frame[frame["delivery_date"] >= start].reset_index(drop=True)
+    keep = (frame["delivery_date"] >= start) & ((frame["delivery_date"] < end) if end is not None else True)
+    return frame[keep].reset_index(drop=True)
+
+
+def _read_input(config: Config, name: str, energy: tuple[str, ...] = ()) -> pd.DataFrame:
+    """Read one quarter-hour input, preceded by its hourly file split into quarters when hourly_start is set."""
+    frame = _read_table(config.resolve(getattr(config.paths, name)), config.start)
+    if config.hourly_start is None:
+        return frame
+    hourly = _read_table(config.resolve(getattr(config.paths, f"hourly_{name}")), config.hourly_start, config.start)
+    return pd.concat([hours_to_quarters(hourly, energy), frame], ignore_index=True)
+
+
+def _read_redispatch(config: Config, folder, start: pd.Timestamp, end: pd.Timestamp | None = None):
+    """Load redispatch rows and days between start and end."""
+    redispatch, days = i90.load(config.resolve(folder), config.labels.direction, config.labels.restriction_types)
+    days = [day for day in days if day >= start and (end is None or day < end)]
+    return redispatch[redispatch["delivery_date"].isin(days)], days
 
 
 def load_inputs(config: Config) -> Inputs:
@@ -42,11 +61,12 @@ def load_inputs(config: Config) -> Inputs:
     shares = areas.unit_shares(units, programming, size)
     capacity = areas.capacity_by_area(units, size, config.areas.min_located_mw)
 
-    redispatch, days = i90.load(
-        config.resolve(config.paths.redispatch_dir), config.labels.direction, config.labels.restriction_types
-    )
-    redispatch = redispatch[redispatch["delivery_date"] >= config.start].copy()
-    days = [day for day in days if day >= config.start]
+    redispatch, days = _read_redispatch(config, config.paths.redispatch_dir, config.start)
+    if config.hourly_start is not None:
+        early, early_days = _read_redispatch(config, config.paths.hourly_redispatch_dir, config.hourly_start, config.start)
+        redispatch = pd.concat([hours_to_quarters(early, ("mwh",)), redispatch], ignore_index=True)
+        days = early_days + days
+    redispatch = redispatch.copy()
     redispatch["unit"] = redispatch["unit"].replace(locations.load_aliases(config.resolve(config.paths.unit_aliases)))
     placed = areas.coverage(redispatch, shares) if len(redispatch) else float("nan")
     if config.areas.estimate_unplaced and len(redispatch):
@@ -60,10 +80,10 @@ def load_inputs(config: Config) -> Inputs:
     attributed = areas.attribute(redispatch, shares) if len(redispatch) else pd.DataFrame(columns=KEY + ["mwh"])
     points, _ = weather.points_for(capacity, config.weather.grid_degrees)
     return Inputs(
-        market=_read_table(config.resolve(config.paths.market), config.start),
-        constraints=_read_table(config.resolve(config.paths.constraints), config.start),
+        market=_read_input(config, "market"),
+        constraints=_read_input(config, "constraints", tuple(config.constraint_indicators)),
         capacity=capacity,
-        weather=_read_table(config.resolve(config.paths.weather), config.start),
+        weather=_read_input(config, "weather"),
         points=points,
         attributed=attributed,
         label_days=set(days),
@@ -97,6 +117,17 @@ def build(config: Config, inputs: Inputs, label_end, area_codes: dict[str, int] 
     )
 
 
+def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> pd.DataFrame:
+    """Build only the labelled rows, sampling negatives before the holdout days as each month is built."""
+    last = max(day for day in inputs.label_days if day <= label_end)
+    cutoff = last - pd.Timedelta(days=config.model.test_days)
+    sample = (config.model.negative_fraction, config.model.random_state, cutoff)
+    return build_dataset(
+        config, inputs.market, inputs.constraints, inputs.capacity, inputs.weather, inputs.points,
+        inputs.attributed, inputs.label_days, label_end, inputs.area_codes, sample=sample,
+    )
+
+
 def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, dict]:
     """Train the Spanish classifier, treating the grid cell as a categorical input."""
     categorical = CATEGORICAL if len(inputs.area_codes) <= MAX_CATEGORIES else []
@@ -112,7 +143,8 @@ def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, 
     report["redispatch_estimated"] = round(inputs.estimated, 3)
     labelled = dataset[dataset["target"].notna()]
     report["labelled_days"] = int(labelled["delivery_date"].nunique())
-    report["positive_rate"] = round(float(labelled["target"].mean()), 4) if len(labelled) else None
+    weights = labelled["weight"] if "weight" in labelled else None
+    report["positive_rate"] = round(float(np.average(labelled["target"], weights=weights)), 4) if len(labelled) else None
     return bundle, report
 
 

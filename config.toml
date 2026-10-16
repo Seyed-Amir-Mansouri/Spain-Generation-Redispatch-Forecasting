@@ -11,10 +11,15 @@ unit_aliases = "reference/unit_aliases.csv"
 model_dir = "models"
 predictions = "outputs/predictions.csv"
 validation = "outputs/validation_history.csv"
+hourly_redispatch_dir = "data/raw/i90"
+hourly_market = "data/raw/market.csv"
+hourly_constraints = "data/raw/constraints.csv"
+hourly_weather = "data/raw/weather.csv"
 
-# first day of 15-minute data
+# start is the first day of 15-minute data; hourly data from hourly_start is split into quarters
 [data]
 start = "2025-10-01"
+hourly_start = ""
 
 [esios]
 request_interval_seconds = 6

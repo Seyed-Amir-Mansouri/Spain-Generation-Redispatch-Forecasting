@@ -6,6 +6,7 @@ import pandas as pd
 from congestion_es import estimator, ledger, pipeline, weather
 from congestion_es.areas import CAPACITY_COLUMNS
 from congestion_es.features import feature_columns
+from congestion_es.timeseries import hours_to_quarters
 
 AREAS = ["37.50_-6.00", "38.50_-6.50", "41.00_-1.00"]
 
@@ -87,6 +88,30 @@ def test_train_and_predict_rank_the_congested_cell_first(config):
     means = predictions.groupby("area")["risk_probability"].mean()
     assert means.idxmax() == AREAS[0]
     assert estimator.predict(bundle, dataset.head(5)).shape == (5,)
+
+
+def test_training_build_samples_negatives_but_keeps_holdout_whole(config):
+    inputs = _inputs(config)
+    label_end = pd.Timestamp("2025-12-17")
+    full = pipeline.build(config, inputs, label_end)
+    full = full[full["target"].notna()]
+    sampled = pipeline.build_training(config, inputs, label_end)
+    cutoff = full["delivery_date"].max() - pd.Timedelta(days=config.model.test_days)
+    early, late = sampled["delivery_date"] <= cutoff, sampled["delivery_date"] > cutoff
+    assert (sampled["target"] == 1).sum() == (full["target"] == 1).sum()
+    assert late.sum() == (full["delivery_date"] > cutoff).sum()
+    assert sampled.loc[early & (sampled["target"] == 0), "weight"].eq(1 / config.model.negative_fraction).all()
+    assert abs(sampled["weight"].sum() - len(full)) < 0.05 * len(full)
+    bundle, report = pipeline.train(config, inputs, sampled)
+    assert report["holdout"]["n"] == late.sum()
+
+
+def test_hours_to_quarters_repeats_rows_and_splits_energy():
+    hourly = pd.DataFrame({"delivery_date": pd.Timestamp("2025-06-01"), "hour": [0, 23], "price": [50.0, 70.0], "mwh": [8.0, 4.0]})
+    quarters = hours_to_quarters(hourly, ("mwh",))
+    assert quarters["period"].tolist() == [0, 1, 2, 3, 92, 93, 94, 95]
+    assert quarters["price"].tolist() == [50.0] * 4 + [70.0] * 4
+    assert quarters["mwh"].tolist() == [2.0] * 4 + [1.0] * 4
 
 
 def test_negative_sampling_keeps_positives_and_reweights_negatives():

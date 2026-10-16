@@ -56,7 +56,8 @@ def train(
 ) -> tuple[dict, dict]:
     """Fit on history, score the most recent days, then refit on all labels."""
     categorical = categorical or []
-    labelled = dataset[dataset["target"].notna()].reset_index(drop=True)
+    known = dataset["target"].notna()
+    labelled = dataset if known.all() else dataset[known].reset_index(drop=True)
     if labelled.empty:
         raise ValueError("No labelled rows available for training")
 
@@ -65,13 +66,23 @@ def train(
     test_part = labelled[labelled["delivery_date"] > cutoff]
 
     report = {"train_rows": int(len(fit_part)), "test_rows": int(len(test_part)), "negative_fraction": settings.negative_fraction}
+    presampled = "weight" in labelled
     if len(fit_part) and len(test_part):
-        rows, weights = _sample(fit_part, settings.negative_fraction, settings.random_state)
+        if presampled:
+            rows, weights = fit_part, fit_part["weight"].to_numpy()
+        else:
+            rows, weights = _sample(fit_part, settings.negative_fraction, settings.random_state)
         holdout = _estimator(settings, categorical, features).fit(rows[features], rows["target"], sample_weight=weights)
         probability = holdout.predict_proba(test_part[features])[:, 1]
         report["holdout"] = metrics.score(test_part["target"], probability, settings.threshold)
 
-    rows, weights = _sample(labelled, settings.negative_fraction, settings.random_state)
+    if presampled:
+        # the holdout days were kept whole, so only they are sampled here
+        late, late_weights = _sample(test_part, settings.negative_fraction, settings.random_state)
+        rows = pd.concat([fit_part, late], ignore_index=True)
+        weights = np.concatenate([fit_part["weight"].to_numpy(), late_weights])
+    else:
+        rows, weights = _sample(labelled, settings.negative_fraction, settings.random_state)
     estimator = _estimator(settings, categorical, features).fit(rows[features], rows["target"], sample_weight=weights)
     trained_at = datetime.now(timezone.utc)
     bundle = {

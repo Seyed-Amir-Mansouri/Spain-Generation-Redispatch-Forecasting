@@ -69,7 +69,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - **Expected output.** Each cell's expected wind and solar output is its located capacity multiplied by a simple power curve. Its share of the national expected output tells the model where renewable generation will concentrate.
    - **Cell inputs.** These are joined with each cell's located capacity and its own congestion history.
 6. **Training and prediction.**
-   - **Training.** A gradient-boosted classifier is trained with the grid cell as a categorical input. The last `test_days` are held out for scoring before the final refit.
+   - **Training.** A gradient-boosted classifier is trained with the grid cell as a categorical input. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every congested row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows.
    - **Prediction.** `predict` writes every cell and 15-minute period to the ledger and prints the cells with the highest risk.
    - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` scores the ledger.
 
@@ -163,4 +163,4 @@ To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constra
 - **Late labels.** Per-unit labels arrive 90 days late, so predictions can only be scored per cell three months after delivery.
 - **Weather history.** Open-Meteo's archive stitches together the first hours of successive forecast runs, so historical weather is slightly more accurate than a forecast issued the day before would have been.
 - **Missing IDA1 prices.** On some days OMIE published an empty IDA1 file. Those periods carry no IDA1 price, which the model handles as missing.
-- **Data period.** All inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`). Every source is used at that resolution except weather, which is interpolated. Earlier hourly data is not used.
+- **Data period.** All inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`). Every source is used at that resolution except weather, which is interpolated. Earlier hourly data can be added for training by setting `[data] hourly_start`. The hourly files under `hourly_*` in `[paths]` are then split into quarter-hours, with each hour's value repeated and energy values divided by four, and placed before `start`. It is off by default. The fetch commands only write quarter-hour files, so the hourly files come from earlier runs.

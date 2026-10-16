@@ -115,7 +115,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     """Build the dataset from history and save a trained model."""
     config = load_config(args.config)
     inputs = pipeline.load_inputs(config)
-    dataset = pipeline.build(config, inputs, pipeline.label_cutoff(config))
+    dataset = pipeline.build_training(config, inputs, pipeline.label_cutoff(config))
     bundle, report = pipeline.train(config, inputs, dataset)
     path = estimator.save(bundle, config.resolve(config.paths.model_dir))
     print(json.dumps(report, indent=2, default=str))

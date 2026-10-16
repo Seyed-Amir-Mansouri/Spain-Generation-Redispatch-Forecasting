@@ -63,6 +63,15 @@ def congestion_history(config: Config, keys: pd.DataFrame, attributed: pd.DataFr
     return frame.merge(daily.drop(columns="congested"), on=["delivery_date", "area"], how="left")
 
 
+def sample_negatives(frame: pd.DataFrame, fraction: float, until: pd.Timestamp, rng) -> pd.DataFrame:
+    """Keep every positive and a share of the negatives up to a date, with a weight that scales kept negatives back up."""
+    negative = (frame["target"] == 0) & (frame["delivery_date"] <= until)
+    frame = frame[~negative | (rng.random(len(frame)) < fraction)].copy()
+    sampled = (frame["target"] == 0) & (frame["delivery_date"] <= until)
+    frame["weight"] = np.where(sampled, 1 / fraction, 1.0)
+    return frame
+
+
 def build_dataset(
     config: Config,
     market: pd.DataFrame,
@@ -75,6 +84,7 @@ def build_dataset(
     label_end: pd.Timestamp | None,
     area_codes: dict[str, int],
     dates: list[pd.Timestamp] | None = None,
+    sample: tuple[float, int, pd.Timestamp] | None = None,
 ) -> pd.DataFrame:
     """Join national inputs to every area with lagged congestion history and the target, one month at a time."""
     national = market.merge(constraints, on=MARKET_KEY, how="left")
@@ -97,6 +107,7 @@ def build_dataset(
     if dates is not None:
         national = national[national["delivery_date"].isin(pd.to_datetime(dates))]
 
+    rng = np.random.default_rng(sample[1]) if sample else None
     parts = []
     for _, month in national.groupby(national["delivery_date"].dt.to_period("M")):
         frame = month.merge(capacity, how="cross")
@@ -109,6 +120,9 @@ def build_dataset(
         target = frame["congested"] if label_end is not None else pd.Series(np.nan, index=frame.index)
         frame["target"] = target.where(frame["delivery_date"] <= label_end) if label_end is not None else target
         frame = frame.drop(columns="congested")
+        if sample:
+            fraction, _, until = sample
+            frame = sample_negatives(frame[frame["target"].notna()], fraction, until, rng)
         wide = frame.select_dtypes("float64").columns.drop("target", errors="ignore")
         frame[wide] = frame[wide].astype("float32")
         parts.append(frame)

@@ -25,6 +25,10 @@ class Paths:
     model_dir: Path
     predictions: Path
     validation: Path
+    hourly_redispatch_dir: Path | None = None
+    hourly_market: Path | None = None
+    hourly_constraints: Path | None = None
+    hourly_weather: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,7 @@ class Config:
     constraint_indicators: dict[str, int]
     model: Settings
     validation: Validation
+    hourly_start: pd.Timestamp | None = None
 
     def resolve(self, path: Path) -> Path:
         """Return an absolute path relative to the config file's folder."""
@@ -105,4 +110,5 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         constraint_indicators={name: int(value) for name, value in raw["constraint_indicators"].items()},
         model=Settings(**raw["model"]),
         validation=Validation(**raw["validation"]),
+        hourly_start=pd.Timestamp(raw["data"]["hourly_start"]) if raw["data"].get("hourly_start") else None,
     )
