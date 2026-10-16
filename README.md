@@ -1,4 +1,4 @@
-# Spanish Grid Congestion Location
+# A Machine Learning Tool for Generation Redispatch Forecasting in the Spanish Electricity System
 
 This estimator predicts where in the Spanish peninsular grid REE will curtail generation because of a grid limit. For each delivery hour and each grid cell (0.5° squares by default), it gives the probability that units in that cell are redispatched downwards in the day-ahead technical-constraint process (Phase I).
 
