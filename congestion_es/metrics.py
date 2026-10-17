@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import brier_score_loss, roc_auc_score
 
 
@@ -32,4 +33,28 @@ def score(y_true: np.ndarray, probability: np.ndarray, threshold: float) -> dict
         "roc_auc": float(auc),
         "precision": float(precision),
         "recall": float(recall),
+    }
+
+
+def _corr(a, b) -> float:
+    """Return the Pearson correlation, or NaN when either side is constant."""
+    a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    return float(np.corrcoef(a, b)[0, 1]) if len(a) > 1 and a.std() > 0 and b.std() > 0 else float("nan")
+
+
+def energy(frame: pd.DataFrame) -> dict:
+    """Score expected MWh against actual MWh per cell and quarter-hour, per cell and day, per cell and nationally."""
+    day = frame.groupby(["delivery_date", "area"])[["mwh", "expected_mwh"]].sum()
+    cell = frame.groupby("area")[["mwh", "expected_mwh"]].sum()
+    national = frame.groupby(["delivery_date", "period"])[["mwh", "expected_mwh"]].sum()
+    actual = frame["mwh"].sum()
+    return {
+        "actual_gwh": float(actual / 1000),
+        "predicted_to_actual": float(frame["expected_mwh"].sum() / actual) if actual else float("nan"),
+        "mae_mwh": float((frame["expected_mwh"] - frame["mwh"]).abs().mean()),
+        "corr_cell_quarter": _corr(frame["expected_mwh"], frame["mwh"]),
+        "corr_cell_day": _corr(day["expected_mwh"], day["mwh"]),
+        "wape_cell_day": float((day["expected_mwh"] - day["mwh"]).abs().sum() / day["mwh"].sum()) if actual else float("nan"),
+        "corr_cell_total": _corr(cell["expected_mwh"], cell["mwh"]),
+        "corr_national_quarter": _corr(national["expected_mwh"], national["mwh"]),
     }

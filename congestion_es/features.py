@@ -51,9 +51,11 @@ def label_rows(keys: pd.DataFrame, attributed: pd.DataFrame, label_days: set, mi
 
 
 def congestion_history(config: Config, keys: pd.DataFrame, attributed: pd.DataFrame, label_days: set) -> pd.DataFrame:
-    """Label every key and compute each cell's lagged congestion history on a compact table."""
+    """Label every key with its flag and MWh and compute each cell's lagged congestion history on a compact table."""
     frame = keys.sort_values(KEY).reset_index(drop=True)
     frame["congested"] = label_rows(frame, attributed, label_days, config.labels.min_mwh).to_numpy().astype("float32")
+    mwh = frame[KEY].merge(attributed[KEY + ["mwh"]], on=KEY, how="left")["mwh"].fillna(0.0).clip(lower=0.0)
+    frame["redispatch_mwh"] = mwh.where(frame["congested"].notna().to_numpy()).to_numpy().astype("float32")
     days = config.features.history_days
     lag = config.features.event_lag_days
     frame["area_period_congested_hist"] = lagged_rolling(frame, "congested", ["area", "period"], days, lag, "mean").astype("float32")
@@ -119,7 +121,8 @@ def build_dataset(
         frame = frame.merge(history, on=KEY, how="left")
         target = frame["congested"] if label_end is not None else pd.Series(np.nan, index=frame.index)
         frame["target"] = target.where(frame["delivery_date"] <= label_end) if label_end is not None else target
-        frame = frame.drop(columns="congested")
+        frame["target_mwh"] = frame["redispatch_mwh"].where(frame["target"].notna())
+        frame = frame.drop(columns=["congested", "redispatch_mwh"])
         if sample:
             fraction, _, until = sample
             frame = sample_negatives(frame[frame["target"].notna()], fraction, until, rng)

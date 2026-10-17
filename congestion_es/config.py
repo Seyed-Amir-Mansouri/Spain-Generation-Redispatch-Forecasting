@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -48,10 +48,11 @@ class Weather:
 
 @dataclass(frozen=True)
 class Labels:
-    direction: str
+    directions: tuple[str, ...]
     restriction_types: tuple[str, ...]
     min_mwh: float
     settle_days: int
+    direction: str = ""
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,10 @@ class Config:
         """Return an absolute path relative to the config file's folder."""
         return path if path.is_absolute() else self.root / path
 
+    def for_direction(self, direction: str) -> Config:
+        """Return a copy that labels and trains on one redispatch direction."""
+        return replace(self, labels=replace(self.labels, direction=direction))
+
 
 def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
     """Parse a TOML config file into a Config object."""
@@ -101,7 +106,8 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         areas=Areas(**raw["areas"]),
         weather=Weather(**raw["weather"]),
         labels=Labels(
-            direction=labels["direction"],
+            directions=tuple(labels["directions"]),
+            direction=labels["directions"][0],
             restriction_types=tuple(labels["restriction_types"]),
             min_mwh=float(labels["min_mwh"]),
             settle_days=int(labels["settle_days"]),

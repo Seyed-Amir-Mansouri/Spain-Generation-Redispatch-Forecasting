@@ -111,49 +111,60 @@ def cmd_fetch_redispatch(args: argparse.Namespace) -> None:
     print(json.dumps(stats))
 
 
+def _directions(config: Config, args: argparse.Namespace) -> list[Config]:
+    """Return one config per redispatch direction, or only the one asked for."""
+    chosen = [args.direction] if getattr(args, "direction", None) else config.labels.directions
+    return [config.for_direction(direction) for direction in chosen]
+
+
 def cmd_train(args: argparse.Namespace) -> None:
-    """Build the dataset from history and save a trained model."""
-    config = load_config(args.config)
-    inputs = pipeline.load_inputs(config)
-    dataset = pipeline.build_training(config, inputs, pipeline.label_cutoff(config))
-    bundle, report = pipeline.train(config, inputs, dataset)
-    path = estimator.save(bundle, config.resolve(config.paths.model_dir))
-    print(json.dumps(report, indent=2, default=str))
-    print(f"saved: {path}")
+    """Build each direction's dataset from history and save its trained models."""
+    for config in _directions(load_config(args.config), args):
+        inputs = pipeline.load_inputs(config)
+        dataset = pipeline.build_training(config, inputs, pipeline.label_cutoff(config))
+        bundle, report = pipeline.train(config, inputs, dataset)
+        path = estimator.save(bundle, config.resolve(config.paths.model_dir))
+        del dataset
+        print(json.dumps(report, indent=2, default=str))
+        print(f"saved: {path}")
 
 
 def cmd_predict(args: argparse.Namespace) -> None:
-    """Issue area predictions for one delivery day and log them."""
-    config = load_config(args.config)
-    bundle = estimator.load(config.resolve(config.paths.model_dir))
-    inputs = pipeline.load_inputs(config)
+    """Issue each direction's cell predictions for one delivery day and log them."""
     day = _date(args.date)
-    dataset = pipeline.build(config, inputs, None, bundle["area_codes"], [day])
     issued_at = datetime.fromisoformat(args.issued_at) if args.issued_at else None
-    predictions = pipeline.predict_day(bundle, dataset, day, issued_at)
-    path = config.resolve(config.paths.predictions)
-    ledger.append(predictions, path)
+    for config in _directions(load_config(args.config), args):
+        bundle = estimator.load(config.resolve(config.paths.model_dir), config.labels.direction)
+        inputs = pipeline.load_inputs(config)
+        dataset = pipeline.build(config, inputs, None, bundle["area_codes"], [day])
+        predictions = pipeline.predict_day(bundle, dataset, day, issued_at)
+        path = config.resolve(config.paths.predictions)
+        ledger.append(predictions, path)
 
-    top = (predictions.groupby("area")["risk_probability"].max().sort_values(ascending=False).head(args.top))
-    size = bundle["cell_degrees"]
-    print(f"{len(predictions)} rows for {day:%Y-%m-%d}; highest-risk cells (centre lat, lon, max 15-minute probability):")
-    for area, probability in top.items():
-        lat, lon = areas.cell_center(area, size)
-        print(f"  {area}  ({lat:.2f}, {lon:.2f})  {probability:.2f}")
-    print(f"logged: {path}")
+        top = predictions.groupby("area")["expected_mwh"].sum().sort_values(ascending=False).head(args.top)
+        size = bundle["cell_degrees"]
+        print(f"{config.labels.direction}: {len(predictions)} rows for {day:%Y-%m-%d}, "
+              f"{predictions['expected_mwh'].sum():,.0f} MWh expected; top cells (centre lat, lon, expected MWh for the day):")
+        for area, mwh in top.items():
+            lat, lon = areas.cell_center(area, size)
+            print(f"  {area}  ({lat:.2f}, {lon:.2f})  {mwh:,.1f}")
+        print(f"logged: {path}")
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    """Score logged predictions against the per-unit redispatch REE has published so far."""
-    config = load_config(args.config)
+    """Score each direction's logged predictions against the per-unit redispatch REE has published so far."""
+    base = load_config(args.config)
     as_of = _date(args.as_of) if args.as_of else pd.Timestamp(datetime.now(timezone.utc).date())
-    label_end = as_of - pd.Timedelta(days=config.labels.settle_days)
-    predictions = ledger.load(config.resolve(config.paths.predictions))
-    result = validate.evaluate(config, predictions, pipeline.load_inputs(config), label_end, as_of)
-    history = ledger.append_history(result, config.resolve(config.paths.validation))
-    print(json.dumps(result, indent=2, default=str))
-    print(f"history rows: {len(history)}")
-    if result["alert"]:
+    label_end = as_of - pd.Timedelta(days=base.labels.settle_days)
+    predictions = ledger.load(base.resolve(base.paths.predictions))
+    alert = False
+    for config in _directions(base, args):
+        result = validate.evaluate(config, predictions, pipeline.load_inputs(config), label_end, as_of)
+        history = ledger.append_history(result, config.resolve(config.paths.validation))
+        print(json.dumps(result, indent=2, default=str))
+        print(f"history rows: {len(history)}")
+        alert = alert or result["alert"]
+    if alert:
         print("ALERT: window skill is below the configured minimum", file=sys.stderr)
         sys.exit(2)
 
@@ -180,16 +191,20 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--end", required=True, help="day after the last delivery date YYYY-MM-DD")
         command.set_defaults(func=func)
 
-    sub.add_parser("train", help="train and save the estimator").set_defaults(func=cmd_train)
+    train = sub.add_parser("train", help="train and save the models for each direction")
+    train.add_argument("--direction", help="train only this direction, e.g. Bajar or Subir")
+    train.set_defaults(func=cmd_train)
 
     predict = sub.add_parser("predict", help="issue area predictions for a delivery day")
     predict.add_argument("--date", required=True, help="delivery date YYYY-MM-DD")
     predict.add_argument("--issued-at", help="ISO timestamp recorded as issue time")
-    predict.add_argument("--top", type=int, default=10, help="number of highest-risk cells to print")
+    predict.add_argument("--top", type=int, default=10, help="number of cells with the most expected MWh to print")
+    predict.add_argument("--direction", help="predict only this direction")
     predict.set_defaults(func=cmd_predict)
 
     check = sub.add_parser("validate", help="score predictions against published redispatch")
     check.add_argument("--as-of", help="evaluation date YYYY-MM-DD, default today")
+    check.add_argument("--direction", help="validate only this direction")
     check.set_defaults(func=cmd_validate)
     return parser
 

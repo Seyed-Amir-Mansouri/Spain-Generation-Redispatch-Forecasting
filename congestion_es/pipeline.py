@@ -129,15 +129,16 @@ def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> p
 
 
 def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, dict]:
-    """Train the Spanish classifier, treating the grid cell as a categorical input."""
+    """Train one direction's probability and MWh models, treating the grid cell as a categorical input."""
     categorical = CATEGORICAL if len(inputs.area_codes) <= MAX_CATEGORIES else []
     bundle, report = estimator.train(
         dataset,
         feature_columns(config),
         config.model,
         categorical=categorical,
-        extra={"area_codes": inputs.area_codes, "cell_degrees": config.areas.cell_degrees},
+        extra={"area_codes": inputs.area_codes, "cell_degrees": config.areas.cell_degrees, "direction": config.labels.direction},
     )
+    report["direction"] = config.labels.direction
     report["areas"] = len(inputs.area_codes)
     report["redispatch_coverage"] = round(inputs.coverage, 3)
     report["redispatch_estimated"] = round(inputs.estimated, 3)
@@ -161,6 +162,8 @@ def predict_day(
     issued_at = issued_at or datetime.now(timezone.utc)
     rows["risk_probability"] = estimator.predict(bundle, rows)
     rows["risk_flag"] = (rows["risk_probability"] >= bundle["threshold"]).astype(int)
+    rows["expected_mwh"] = estimator.predict_mwh(bundle, rows, rows["risk_probability"].to_numpy())
+    rows["direction"] = bundle["direction"]
     rows["issued_at"] = issued_at.isoformat()
     rows["model_version"] = bundle["model_version"]
     return rows[ledger.PREDICTION_COLUMNS].reset_index(drop=True)

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from congestion_es import estimator, ledger, pipeline, weather
+from congestion_es import estimator, ledger, pipeline, validate, weather
 from congestion_es.areas import CAPACITY_COLUMNS
 from congestion_es.features import feature_columns
 from congestion_es.timeseries import hours_to_quarters
@@ -112,6 +112,56 @@ def test_hours_to_quarters_repeats_rows_and_splits_energy():
     assert quarters["period"].tolist() == [0, 1, 2, 3, 92, 93, 94, 95]
     assert quarters["price"].tolist() == [50.0] * 4 + [70.0] * 4
     assert quarters["mwh"].tolist() == [2.0] * 4 + [1.0] * 4
+
+
+def test_target_mwh_is_the_attributed_energy_on_labelled_rows(config):
+    inputs = _inputs(config, days=40)
+    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-06-25"))
+    merged = dataset.merge(inputs.attributed, on=["delivery_date", "period", "area"], how="left")
+    labelled = merged["target"].notna()
+    assert np.allclose(merged.loc[labelled, "target_mwh"], merged.loc[labelled, "mwh"].fillna(0.0))
+    assert merged.loc[~labelled, "target_mwh"].isna().all()
+
+
+def test_expected_mwh_follows_the_congested_cell_and_is_saved_per_direction(config, tmp_path):
+    inputs = _inputs(config)
+    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-12-17"))
+    bundle, report = pipeline.train(config.for_direction("Subir"), inputs, dataset)
+    assert report["holdout_energy"]["corr_cell_day"] > 0.5
+    assert bundle["direction"] == "Subir"
+
+    path = estimator.save(bundle, tmp_path)
+    assert path.name == "redispatch_model_subir.joblib"
+    loaded = estimator.load(tmp_path, "Subir")
+    predictions = pipeline.predict_day(loaded, pipeline.build(config, inputs, None), pd.Timestamp("2025-12-10"))
+    assert (predictions["direction"] == "Subir").all()
+    assert (predictions["expected_mwh"] >= 0).all()
+    totals = predictions.groupby("area")["expected_mwh"].sum()
+    assert totals.idxmax() == AREAS[0]
+
+
+def test_validation_scores_only_its_direction_with_energy_measures(config):
+    inputs = _inputs(config)
+    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-12-17"))
+    bundle, _ = pipeline.train(config, inputs, dataset)
+    features = pipeline.build(config, inputs, None)
+    issued = datetime(2025, 11, 1, tzinfo=timezone.utc)
+    days = pd.date_range("2025-11-01", "2025-11-10")
+    predictions = pd.concat([pipeline.predict_day(bundle, features, day, issued) for day in days], ignore_index=True)
+    upward = predictions.assign(direction="Subir", expected_mwh=0.0)
+    ledger_frame = pd.concat([predictions, upward], ignore_index=True)
+    ledger_frame["issued_at"] = pd.to_datetime(ledger_frame["issued_at"], utc=True)
+    result = validate.evaluate(config.for_direction("Bajar"), ledger_frame, inputs, pd.Timestamp("2025-11-10"), pd.Timestamp("2026-02-10"))
+    assert result["direction"] == "Bajar"
+    assert result["overall_n"] == len(days) * 96 * len(AREAS)
+    assert result["overall_corr_cell_day"] > 0.5
+
+
+def test_recency_weight_halves_every_half_life():
+    dates = pd.Series(pd.to_datetime(["2026-07-01", "2026-04-02", "2026-01-02"]))
+    weights = estimator._recency(dates, pd.Timestamp("2026-07-01"), 90)
+    assert np.allclose(weights, [1.0, 0.5, 0.25])
+    assert estimator._recency(dates, pd.Timestamp("2026-07-01"), 0).tolist() == [1.0, 1.0, 1.0]
 
 
 def test_negative_sampling_keeps_positives_and_reweights_negatives():

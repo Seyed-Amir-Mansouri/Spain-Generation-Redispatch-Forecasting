@@ -1,14 +1,14 @@
 # A Machine Learning Tool for Generation Redispatch Forecasting in the Spanish Electricity System
 
-This estimator predicts where in the Spanish peninsular grid REE will curtail generation because of a grid limit. For each 15-minute delivery period and each grid cell (0.5° squares by default), it gives the probability that units in that cell are redispatched downwards in the day-ahead technical-constraint process (Phase I).
+This estimator predicts where in the Spanish peninsular grid REE will redispatch generation because of a grid limit, and how much. For each 15-minute delivery period, each grid cell (0.5° squares by default) and each direction, downward (`Bajar`) and upward (`Subir`), it gives the expected MWh that units in that cell are redispatched in the day-ahead technical-constraint process (Phase I), and the probability that it reaches `min_mwh`.
 
-Only the restriction types that describe genuine grid limits count:
+Only the restriction types that describe genuine grid limits count, in both directions:
 
 - `SCB`: overload in the base case
 - `SCA`: overload under contingency
 - `RTD`: distribution-grid constraint
 
-Voltage control and other reasons are excluded.
+Voltage control (`COT`, `SOT`), `RSI` and other reasons are excluded. Upward voltage control and `RSI` carry more energy than the grid-limit codes; add them to `restriction_types` to include them.
 
 ## Why it is useful
 
@@ -57,7 +57,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - **Placing.** The unit's energy goes to its `estimate_top_cells` best cells, one by default. Plants behind the same grid limit are redispatched in the same periods, which is why this works.
      - **Accuracy.** In a test that hid 20% of the placed units, about 54% of their energy went to the exact cell and 77% to the exact cell or a neighbour. A random cell would get under 1%.
    - **Report.** `train` reports the placed share and the estimated share separately.
-4. **Labels.** A cell and 15-minute period is congested when its attributed downward redispatch reaches `min_mwh` (1.25 MWh, the same rate as 5 MWh per hour). Days with no downloaded file are left unknown instead of being counted as uncongested.
+4. **Labels.** Each direction in `directions` gets its own labels. The target is the MWh attributed to a cell and 15-minute period in that direction. A cell and period also counts as redispatched when that energy reaches `min_mwh` (1.25 MWh, the same rate as 5 MWh per hour). Days with no downloaded file are left unknown instead of being counted as zero.
 5. **Features.**
    - **National inputs.** These are quarter-hour series for the whole of Spain:
      - `fetch-market` downloads day-ahead prices plus load, wind and solar forecasts from ENTSO-E.
@@ -69,9 +69,11 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - **Expected output.** Each cell's expected wind and solar output is its located capacity multiplied by a simple power curve. Its share of the national expected output tells the model where renewable generation will concentrate.
    - **Cell inputs.** These are joined with each cell's located capacity and its own congestion history.
 6. **Training and prediction.**
-   - **Training.** A gradient-boosted classifier is trained with the grid cell as a categorical input. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every congested row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows.
-   - **Prediction.** `predict` writes every cell and 15-minute period to the ledger and prints the cells with the highest risk.
-   - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` scores the ledger.
+   - **Two-part model.** Each direction has two gradient-boosted models with the grid cell as a categorical input: a classifier for the probability that the cell's redispatch reaches `min_mwh`, and a Poisson regressor for the MWh when it does. The expected MWh is their product. Below `min_mwh` lies about 4% of the downward energy, which this leaves out.
+   - **Training.** `train` fits both directions, or one with `--direction`. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every congested row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows. Because congestion moves between cells as the grid changes, each training row's weight is also halved for every `recency_half_life_days` (60) it lies before the last training day; 0 turns this off.
+   - **Report.** The held-out days are scored for the probability (AUC, precision, recall) and for the energy: predicted over actual MWh, mean absolute error, and correlations per cell and quarter-hour, per cell and day, per cell over the whole period and for the national total. The expected MWh runs about a quarter below the actual energy, by an amount that changes from month to month; a correction factor taken from the held-out days made per-cell errors larger, so none is applied.
+   - **Prediction.** `predict` writes every cell, 15-minute period and direction to the ledger with its probability, flag and expected MWh, and prints the cells with the most expected MWh.
+   - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` scores the ledger for each direction with the same measures.
 
 ## Features
 
@@ -83,7 +85,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
 | Regional weather (Open-Meteo) | 100 m wind speed, solar irradiance and temperature at the cell; expected wind, solar and total renewable output of the cell's capacity; the cell's share of national expected renewable output |
 | National constraint totals (REE) | downward Phase I energy from base-case overload, contingency overload, distribution grid, voltage control and other reasons; total up and down Phase I energy |
 | Cell | grid cell (categorical), cell centre, located capacity by technology |
-| Cell history | share of congested periods over the last 28 and 112 days and for the same quarter of the day, shifted back 91 days because the labels arrive 90 days late |
+| Cell history | share of redispatched periods in the model's direction over the last 28 and 112 days and for the same quarter of the day, shifted back 91 days because the labels arrive 90 days late |
 
 ## Layout
 
@@ -105,8 +107,8 @@ congestion_es/
     features.py     features and target, with lags to prevent look-ahead
     pipeline.py     loads inputs, builds datasets, trains and issues predictions
     validate.py     scores the prediction ledger against published redispatch
-    estimator.py    gradient-boosted classifier: holdout scoring, refit, save, load, predict
-    metrics.py      Brier score, skill, ROC AUC, precision and recall
+    estimator.py    probability and MWh models per direction: holdout scoring, refit, save, load, predict
+    metrics.py      Brier score, skill, ROC AUC, precision, recall and energy errors
     rolling.py      trailing-window aggregates shifted by a reporting lag
     timeseries.py   resampling of tz-aware market series to local quarter-hours
     ledger.py       prediction ledger and scoring of settled predictions
@@ -142,7 +144,7 @@ congestion-es fetch-intraday --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-constraints --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-weather --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
-congestion-es train
+congestion-es train                           # both directions; --direction Subir for one
 congestion-es predict --date 2026-10-15
 congestion-es validate
 ```
@@ -153,14 +155,15 @@ To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constra
 
 ## Limitations
 
-- **Proxy label.** The label shows where units were redispatched, not which line was overloaded. Units on both sides of a bottleneck are moved, and downward redispatch marks the exporting side.
+- **Proxy label.** The label shows where units were redispatched, not which line was overloaded. Units on both sides of a bottleneck are moved: downward redispatch marks the exporting side and upward redispatch the importing side.
 - **Plant locations.** Locations come from matching names against public plant lists, so some units are only partly placed:
   - wind and solar portfolios that group many plants under one unit
   - units with coded names
 
   The OpenStreetMap download covers a box around Spain, so a few matches may fall in Portugal or southern France.
 - **Current fleet only.** The registries and plant lists describe the fleet as it is today, so plants that closed during the training period cannot be located.
+- **Upward inputs.** The national constraint totals by restriction type are downward ones; the upward model sees only the total upward Phase I energy.
 - **Late labels.** Per-unit labels arrive 90 days late, so predictions can only be scored per cell three months after delivery.
 - **Weather history.** Open-Meteo's archive stitches together the first hours of successive forecast runs, so historical weather is slightly more accurate than a forecast issued the day before would have been.
 - **Missing IDA1 prices.** On some days OMIE published an empty IDA1 file. Those periods carry no IDA1 price, which the model handles as missing.
-- **Data period.** All inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`). Every source is used at that resolution except weather, which is interpolated. Earlier hourly data can be added for training by setting `[data] hourly_start`. The hourly files under `hourly_*` in `[paths]` are then split into quarter-hours, with each hour's value repeated and energy values divided by four, and placed before `start`. It is off by default. The fetch commands only write quarter-hour files, so the hourly files come from earlier runs.
+- **Data period.** All inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`). Every source is used at that resolution except weather, which is interpolated. Earlier hourly data can be added for training by setting `[data] hourly_start`. The hourly files under `hourly_*` in `[paths]` are then split into quarter-hours, with each hour's value repeated and energy values divided by four, and placed before `start`. It is set to 1 May 2025, which adds the summer of 2025 to training; leave it empty to train on 15-minute data only. The fetch commands only write quarter-hour files, so the hourly files come from earlier runs.
