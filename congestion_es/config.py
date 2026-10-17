@@ -49,10 +49,11 @@ class Weather:
 @dataclass(frozen=True)
 class Labels:
     directions: tuple[str, ...]
-    restriction_types: tuple[str, ...]
+    codes: dict[str, tuple[str, ...]]
     min_mwh: float
     settle_days: int
     direction: str = ""
+    restriction_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ class Config:
 
     def for_direction(self, direction: str) -> Config:
         """Return a copy that labels and trains on one redispatch direction."""
-        return replace(self, labels=replace(self.labels, direction=direction))
+        return replace(self, labels=replace(self.labels, direction=direction, restriction_types=self.labels.codes[direction]))
 
 
 def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
@@ -107,8 +108,9 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         weather=Weather(**raw["weather"]),
         labels=Labels(
             directions=tuple(labels["directions"]),
+            codes={direction: tuple(codes) for direction, codes in labels["restriction_types"].items()},
             direction=labels["directions"][0],
-            restriction_types=tuple(labels["restriction_types"]),
+            restriction_types=tuple(labels["restriction_types"][labels["directions"][0]]),
             min_mwh=float(labels["min_mwh"]),
             settle_days=int(labels["settle_days"]),
         ),

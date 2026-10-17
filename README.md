@@ -2,13 +2,13 @@
 
 This estimator predicts where in the Spanish peninsular grid REE will redispatch generation because of a grid limit, and how much. For each 15-minute delivery period, each grid cell (0.5° squares by default) and each direction, downward (`Bajar`) and upward (`Subir`), it gives the expected MWh that units in that cell are redispatched in the day-ahead technical-constraint process (Phase I), and the probability that it reaches `min_mwh`.
 
-Only the restriction types that describe genuine grid limits count, in both directions:
+The restriction codes that count are set per direction in `[labels.restriction_types]`:
 
-- `SCB`: overload in the base case
-- `SCA`: overload under contingency
-- `RTD`: distribution-grid constraint
-
-Voltage control (`COT`, `SOT`), `RSI` and other reasons are excluded. Upward voltage control and `RSI` carry more energy than the grid-limit codes; add them to `restriction_types` to include them.
+- **Downward:** only the codes that describe genuine grid limits:
+  - `SCB`: overload in the base case
+  - `SCA`: overload under contingency
+  - `RTD`: distribution-grid constraint
+- **Upward:** the same three plus voltage control (`COT`, `SOT`), system security (`RSI`) and the smaller `DAN` and `PCB`. Most upward energy is gas plants started for voltage control and security, and including those codes made the upward forecast more accurate on held-out days.
 
 ## Why it is useful
 
@@ -83,7 +83,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
 | Prices (ENTSO-E, OMIE) | day-ahead, IDA1, IDA2 and IDA3 prices, and each intraday price minus day-ahead |
 | National forecasts (ENTSO-E) | load, wind, solar and residual load |
 | Regional weather (Open-Meteo) | 100 m wind speed, solar irradiance and temperature at the cell; expected wind, solar and total renewable output of the cell's capacity; the cell's share of national expected renewable output |
-| National constraint totals (REE) | downward Phase I energy from base-case overload, contingency overload, distribution grid, voltage control and other reasons; total up and down Phase I energy |
+| National constraint totals (REE) | downward and upward Phase I energy from base-case overload, contingency overload, distribution grid, voltage control and other reasons, upward security (RSI), and total up and down Phase I energy |
 | Cell | grid cell (categorical), cell centre, located capacity by technology |
 | Cell history | share of redispatched periods in the model's direction over the last 28 and 112 days and for the same quarter of the day, shifted back 91 days because the labels arrive 90 days late |
 
@@ -162,7 +162,6 @@ To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constra
 
   The OpenStreetMap download covers a box around Spain, so a few matches may fall in Portugal or southern France.
 - **Current fleet only.** The registries and plant lists describe the fleet as it is today, so plants that closed during the training period cannot be located.
-- **Upward inputs.** The national constraint totals by restriction type are downward ones; the upward model sees only the total upward Phase I energy.
 - **Late labels.** Per-unit labels arrive 90 days late, so predictions can only be scored per cell three months after delivery.
 - **Weather history.** Open-Meteo's archive stitches together the first hours of successive forecast runs, so historical weather is slightly more accurate than a forecast issued the day before would have been.
 - **Missing IDA1 prices.** On some days OMIE published an empty IDA1 file. Those periods carry no IDA1 price, which the model handles as missing.

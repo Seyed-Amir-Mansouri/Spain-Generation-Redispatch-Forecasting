@@ -38,9 +38,13 @@ request_interval_seconds = 5
 
 [labels]
 directions = ["Bajar", "Subir"]
-restriction_types = ["SCB", "SCA", "RTD"]
 min_mwh = 1.25
 settle_days = 90
+
+# I90 restriction codes counted per direction
+[labels.restriction_types]
+Bajar = ["SCB", "SCA", "RTD"]
+Subir = ["SCB", "SCA", "RTD", "COT", "SOT", "RSI", "DAN", "PCB"]
 
 [features]
 history_days = 28
@@ -56,6 +60,12 @@ down_voltage = 1795
 down_other = 1801
 phase1_up_total = 701
 phase1_down_total = 702
+up_overload_base = 1790
+up_overload_contingency = 1792
+up_voltage = 1794
+up_distribution = 1796
+up_other = 1800
+up_security = 2352
 
 [model]
 test_days = 60

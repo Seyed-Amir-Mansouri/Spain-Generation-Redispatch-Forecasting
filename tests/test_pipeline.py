@@ -157,6 +157,13 @@ def test_validation_scores_only_its_direction_with_energy_measures(config):
     assert result["overall_corr_cell_day"] > 0.5
 
 
+def test_each_direction_uses_its_own_restriction_codes(config):
+    down, up = config.for_direction("Bajar"), config.for_direction("Subir")
+    assert down.labels.restriction_types == ("SCB", "SCA", "RTD")
+    assert {"COT", "SOT", "RSI"} <= set(up.labels.restriction_types)
+    assert up.labels.direction == "Subir"
+
+
 def test_recency_weight_halves_every_half_life():
     dates = pd.Series(pd.to_datetime(["2026-07-01", "2026-04-02", "2026-01-02"]))
     weights = estimator._recency(dates, pd.Timestamp("2026-07-01"), 90)
