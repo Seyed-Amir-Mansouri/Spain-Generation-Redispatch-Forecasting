@@ -25,8 +25,8 @@ hourly_start = "2025-05-01"
 request_interval_seconds = 6
 
 [areas]
-cell_degrees = 0.5
-min_located_mw = 50
+cell_degrees = 1.0
+min_located_mw = 200
 estimate_unplaced = true
 estimate_top_cells = 1
 
@@ -43,7 +43,7 @@ settle_days = 90
 
 # I90 restriction codes counted per direction
 [labels.restriction_types]
-Bajar = ["SCB", "SCA", "RTD"]
+Bajar = ["SCB", "SCA", "RTD", "EST", "CEX", "PEV", "COT"]
 Subir = ["SCB", "SCA", "RTD", "COT", "SOT", "RSI", "DAN", "PCB"]
 
 [features]
@@ -69,7 +69,7 @@ up_security = 2352
 
 [model]
 test_days = 60
-threshold = 0.5
+threshold = 0.8
 learning_rate = 0.05
 max_iter = 600
 max_leaf_nodes = 63

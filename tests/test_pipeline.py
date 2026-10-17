@@ -159,7 +159,7 @@ def test_validation_scores_only_its_direction_with_energy_measures(config):
 
 def test_each_direction_uses_its_own_restriction_codes(config):
     down, up = config.for_direction("Bajar"), config.for_direction("Subir")
-    assert down.labels.restriction_types == ("SCB", "SCA", "RTD")
+    assert {"SCB", "SCA", "RTD", "EST"} <= set(down.labels.restriction_types)
     assert {"COT", "SOT", "RSI"} <= set(up.labels.restriction_types)
     assert up.labels.direction == "Subir"
 

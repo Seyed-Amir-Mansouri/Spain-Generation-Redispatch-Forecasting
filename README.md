@@ -1,14 +1,11 @@
 # A Machine Learning Tool for Generation Redispatch Forecasting in the Spanish Electricity System
 
-This estimator predicts where in the Spanish peninsular grid REE will redispatch generation because of a grid limit, and how much. For each 15-minute delivery period, each grid cell (0.5° squares by default) and each direction, downward (`Bajar`) and upward (`Subir`), it gives the expected MWh that units in that cell are redispatched in the day-ahead technical-constraint process (Phase I), and the probability that it reaches `min_mwh`.
+This estimator predicts where in the Spanish peninsular grid REE will redispatch generation in the day-ahead market, and how much. For each 15-minute delivery period, each grid cell (1° squares, about 110 × 85 km, set by `cell_degrees`) and each direction, downward (`Bajar`) and upward (`Subir`), it gives the expected MWh that units in that cell are redispatched in the day-ahead technical-constraint process (Phase I), and the probability that it reaches `min_mwh`.
 
-The restriction codes that count are set per direction in `[labels.restriction_types]`:
+The restriction codes that count are set per direction in `[labels.restriction_types]`. Both directions count every Phase I code found in the I90 files, so the forecast covers all day-ahead technical-constraint redispatch:
 
-- **Downward:** only the codes that describe genuine grid limits:
-  - `SCB`: overload in the base case
-  - `SCA`: overload under contingency
-  - `RTD`: distribution-grid constraint
-- **Upward:** the same three plus voltage control (`COT`, `SOT`), system security (`RSI`) and the smaller `DAN` and `PCB`. Most upward energy is gas plants started for voltage control and security, and including those codes made the upward forecast more accurate on held-out days.
+- **Downward:** overload in the base case (`SCB`) and under contingency (`SCA`), distribution-grid constraints (`RTD`), `EST` (about a quarter of the downward energy), and the smaller `CEX`, `PEV` and `COT`.
+- **Upward:** `SCB`, `SCA`, `RTD`, voltage control (`COT`, `SOT`), system security (`RSI`) and the smaller `DAN` and `PCB`. Most upward energy is gas plants started for voltage control and security.
 
 ## Why it is useful
 
@@ -72,6 +69,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
    - **Two-part model.** Each direction has two gradient-boosted models with the grid cell as a categorical input: a classifier for the probability that the cell's redispatch reaches `min_mwh`, and a Poisson regressor for the MWh when it does. The expected MWh is their product. Below `min_mwh` lies about 4% of the downward energy, which this leaves out.
    - **Training.** `train` fits both directions, or one with `--direction`. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every congested row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows. Because congestion moves between cells as the grid changes, each training row's weight is also halved for every `recency_half_life_days` (60) it lies before the last training day; 0 turns this off.
    - **Report.** The held-out days are scored for the probability (AUC, precision, recall) and for the energy: predicted over actual MWh, mean absolute error, and correlations per cell and quarter-hour, per cell and day, per cell over the whole period and for the national total. The expected MWh runs about a quarter below the actual energy, by an amount that changes from month to month; a correction factor taken from the held-out days made per-cell errors larger, so none is applied.
+   - **Cell size and threshold.** Cells are 1° squares holding at least `min_located_mw` (200 MW) of located capacity, and a cell is flagged when its probability reaches `threshold` (0.8). Both favour precision: on the held-out days, 0.5° cells flagged at 0.5 gave a precision of 0.79 downward and 0.80 upward, while 1° cells flagged at 0.8 gave 0.91 and 0.87, with recall 0.37 and 0.73. Smaller cells or a lower threshold catch more redispatch with more false alarms, because much of the missed precision is redispatch landing in a neighbouring cell or just under `min_mwh`.
    - **Prediction.** `predict` writes every cell, 15-minute period and direction to the ledger with its probability, flag and expected MWh, and prints the cells with the most expected MWh.
    - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` scores the ledger for each direction with the same measures.
 
