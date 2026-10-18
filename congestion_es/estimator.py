@@ -91,7 +91,7 @@ def train(
         if "target_mwh" in test_part:
             size = _size_estimator(settings, categorical, features, rows, weights)
             expected = probability * size.predict(test_part[features])
-            scored = test_part[["delivery_date", "period", "area"]].assign(mwh=test_part["target_mwh"].to_numpy(), expected_mwh=expected)
+            scored = test_part[["delivery_date", "period", "unit"]].assign(mwh=test_part["target_mwh"].to_numpy(), expected_mwh=expected)
             report["holdout_energy"] = metrics.energy(scored)
 
     if presampled:

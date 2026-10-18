@@ -43,18 +43,18 @@ def _corr(a, b) -> float:
 
 
 def energy(frame: pd.DataFrame) -> dict:
-    """Score expected MWh against actual MWh per cell and quarter-hour, per cell and day, per cell and nationally."""
-    day = frame.groupby(["delivery_date", "area"])[["mwh", "expected_mwh"]].sum()
-    cell = frame.groupby("area")[["mwh", "expected_mwh"]].sum()
+    """Score expected MWh against actual MWh per unit and quarter-hour, per unit and day, per unit and nationally."""
+    day = frame.groupby(["delivery_date", "unit"])[["mwh", "expected_mwh"]].sum()
+    unit = frame.groupby("unit")[["mwh", "expected_mwh"]].sum()
     national = frame.groupby(["delivery_date", "period"])[["mwh", "expected_mwh"]].sum()
     actual = frame["mwh"].sum()
     return {
         "actual_gwh": float(actual / 1000),
         "predicted_to_actual": float(frame["expected_mwh"].sum() / actual) if actual else float("nan"),
         "mae_mwh": float((frame["expected_mwh"] - frame["mwh"]).abs().mean()),
-        "corr_cell_quarter": _corr(frame["expected_mwh"], frame["mwh"]),
-        "corr_cell_day": _corr(day["expected_mwh"], day["mwh"]),
-        "wape_cell_day": float((day["expected_mwh"] - day["mwh"]).abs().sum() / day["mwh"].sum()) if actual else float("nan"),
-        "corr_cell_total": _corr(cell["expected_mwh"], cell["mwh"]),
+        "corr_unit_quarter": _corr(frame["expected_mwh"], frame["mwh"]),
+        "corr_unit_day": _corr(day["expected_mwh"], day["mwh"]),
+        "wape_unit_day": float((day["expected_mwh"] - day["mwh"]).abs().sum() / day["mwh"].sum()) if actual else float("nan"),
+        "corr_unit_total": _corr(unit["expected_mwh"], unit["mwh"]),
         "corr_national_quarter": _corr(national["expected_mwh"], national["mwh"]),
     }

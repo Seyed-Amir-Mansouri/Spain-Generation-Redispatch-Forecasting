@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from . import areas, estimator, i90, ledger, locations, weather
+from . import estimator, i90, ledger, locations, weather
 from .config import Config
 from .features import CATEGORICAL, KEY, build_dataset, feature_columns
 from .timeseries import hours_to_quarters
@@ -18,14 +18,12 @@ MAX_CATEGORIES = 254
 class Inputs:
     market: pd.DataFrame
     constraints: pd.DataFrame
-    capacity: pd.DataFrame
+    units: pd.DataFrame
     weather: pd.DataFrame
     points: pd.DataFrame
-    attributed: pd.DataFrame
+    redispatch: pd.DataFrame
     label_days: set
-    area_codes: dict[str, int]
     coverage: float
-    estimated: float = 0.0
 
 
 def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -53,14 +51,32 @@ def _read_redispatch(config: Config, folder, start: pd.Timestamp, end: pd.Timest
     return redispatch[redispatch["delivery_date"].isin(days)], days
 
 
-def load_inputs(config: Config) -> Inputs:
-    """Read market, constraint, unit-location and redispatch files and attribute redispatch to areas."""
-    programming, _ = locations.load_registry(config.resolve(config.paths.registry_dir))
+def unit_places(config: Config) -> pd.DataFrame:
+    """Place each programming unit at the capacity-weighted centre of its located physical units."""
     units = pd.read_csv(config.resolve(config.paths.unit_locations))
-    size = config.areas.cell_degrees
-    shares = areas.unit_shares(units, programming, size)
-    capacity = areas.capacity_by_area(units, size, config.areas.min_located_mw)
+    units = units[units["lat"].notna()].assign(mw=units["max_mw"].fillna(0).clip(lower=0) + 1e-6)
+    units["wlat"], units["wlon"] = units["lat"] * units["mw"], units["lon"] * units["mw"]
+    sums = units.groupby("programming_unit")[["wlat", "wlon", "mw"]].sum()
+    return pd.DataFrame({"unit": sums.index, "lat": sums["wlat"] / sums["mw"], "lon": sums["wlon"] / sums["mw"]}).reset_index(drop=True)
 
+
+def select_units(config: Config, redispatch: pd.DataFrame, days: list[pd.Timestamp]) -> pd.DataFrame:
+    """Keep units redispatched in at least min_events quarter-hours before the held-out days, with how often and how much."""
+    cutoff = max(days) - pd.Timedelta(days=config.model.test_days)
+    early = redispatch[(redispatch["delivery_date"] <= cutoff) & (redispatch["mwh"] >= config.labels.min_mwh)]
+    stats = early.groupby("unit")["mwh"].agg(["size", "mean"])
+    stats = stats[stats["size"] >= config.units.min_events]
+    quarters = 96 * sum(day <= cutoff for day in days)
+    return pd.DataFrame({
+        "unit": stats.index,
+        "unit_id": range(len(stats)),
+        "unit_redispatch_rate": (stats["size"] / quarters).to_numpy("float32"),
+        "unit_mean_mwh": stats["mean"].to_numpy("float32"),
+    })
+
+
+def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
+    """Read market, constraint, weather and per-unit redispatch files, and pick the units to predict."""
     redispatch, days = _read_redispatch(config, config.paths.redispatch_dir, config.start)
     if config.hourly_start is not None:
         early, early_days = _read_redispatch(config, config.paths.hourly_redispatch_dir, config.hourly_start, config.start)
@@ -68,28 +84,22 @@ def load_inputs(config: Config) -> Inputs:
         days = early_days + days
     redispatch = redispatch.copy()
     redispatch["unit"] = redispatch["unit"].replace(locations.load_aliases(config.resolve(config.paths.unit_aliases)))
-    placed = areas.coverage(redispatch, shares) if len(redispatch) else float("nan")
-    if config.areas.estimate_unplaced and len(redispatch):
-        cross_border = set(programming.loc[programming["unit_type"] == locations.CROSS_BORDER_TYPE, "code"])
-        estimated = areas.estimate_shares(
-            redispatch, shares, areas.capacity_by_area(units, size, 0.0),
-            programming.set_index("code")["technology"].astype(str).to_dict(), cross_border, config.areas.estimate_top_cells,
-            size=size,
-        )
-        shares = pd.concat([shares, estimated], ignore_index=True)
-    attributed = areas.attribute(redispatch, shares) if len(redispatch) else pd.DataFrame(columns=KEY + ["mwh"])
-    points, _ = weather.points_for(capacity, config.weather.grid_degrees)
+    redispatch = redispatch.groupby(KEY, as_index=False)["mwh"].sum()
+    if units is None:
+        units = select_units(config, redispatch, days)
+    total = redispatch["mwh"].sum()
+    covered = redispatch.loc[redispatch["unit"].isin(set(units["unit"])), "mwh"].sum() / total if total else float("nan")
+    forecast = _read_input(config, "weather")
+    points, _ = weather.points_for(unit_places(config), config.weather.grid_degrees, set(forecast["point"]))
     return Inputs(
         market=_read_input(config, "market"),
         constraints=_read_input(config, "constraints", tuple(config.constraint_indicators)),
-        capacity=capacity,
-        weather=_read_input(config, "weather"),
+        units=units,
+        weather=forecast,
         points=points,
-        attributed=attributed,
+        redispatch=redispatch,
         label_days=set(days),
-        area_codes={area: code for code, area in enumerate(sorted(capacity["area"]))},
-        coverage=placed,
-        estimated=(areas.coverage(redispatch, shares) - placed) if len(redispatch) else 0.0,
+        coverage=covered,
     )
 
 
@@ -100,20 +110,11 @@ def label_cutoff(config: Config, today: pd.Timestamp | None = None) -> pd.Timest
     return today.normalize() - pd.Timedelta(days=config.labels.settle_days)
 
 
-def build(config: Config, inputs: Inputs, label_end, area_codes: dict[str, int] | None = None, dates=None) -> pd.DataFrame:
+def build(config: Config, inputs: Inputs, label_end, dates=None) -> pd.DataFrame:
     """Build the feature table for the given dates, or every date in the market inputs, at quarter-hours."""
     return build_dataset(
-        config,
-        inputs.market,
-        inputs.constraints,
-        inputs.capacity,
-        inputs.weather,
-        inputs.points,
-        inputs.attributed,
-        inputs.label_days,
-        label_end,
-        area_codes or inputs.area_codes,
-        dates,
+        config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
+        inputs.redispatch, inputs.label_days, label_end, dates,
     )
 
 
@@ -123,25 +124,25 @@ def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> p
     cutoff = last - pd.Timedelta(days=config.model.test_days)
     sample = (config.model.negative_fraction, config.model.random_state, cutoff)
     return build_dataset(
-        config, inputs.market, inputs.constraints, inputs.capacity, inputs.weather, inputs.points,
-        inputs.attributed, inputs.label_days, label_end, inputs.area_codes, sample=sample,
+        config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
+        inputs.redispatch, inputs.label_days, label_end, sample=sample,
     )
 
 
 def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, dict]:
-    """Train one direction's probability and MWh models, treating the grid cell as a categorical input."""
-    categorical = CATEGORICAL if len(inputs.area_codes) <= MAX_CATEGORIES else []
+    """Train one direction's probability and MWh models per unit, with the unit as a categorical input when they are few enough."""
+    categorical = CATEGORICAL if len(inputs.units) <= MAX_CATEGORIES else []
     bundle, report = estimator.train(
         dataset,
         feature_columns(config),
         config.model,
         categorical=categorical,
-        extra={"area_codes": inputs.area_codes, "cell_degrees": config.areas.cell_degrees, "direction": config.labels.direction},
+        extra={"units": inputs.units, "direction": config.labels.direction},
     )
     report["direction"] = config.labels.direction
-    report["areas"] = len(inputs.area_codes)
+    report["units"] = len(inputs.units)
+    report["unit_categorical"] = bool(categorical)
     report["redispatch_coverage"] = round(inputs.coverage, 3)
-    report["redispatch_estimated"] = round(inputs.estimated, 3)
     labelled = dataset[dataset["target"].notna()]
     report["labelled_days"] = int(labelled["delivery_date"].nunique())
     weights = labelled["weight"] if "weight" in labelled else None

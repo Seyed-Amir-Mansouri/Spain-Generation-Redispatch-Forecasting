@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import areas, esios, estimator, i90, ledger, locations, market, omie, pipeline, validate, weather
+from . import esios, estimator, i90, ledger, locations, market, omie, pipeline, validate, weather
 from .config import DEFAULT_CONFIG, Config, load_config
 
 
@@ -80,11 +80,9 @@ def cmd_fetch_intraday(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch_weather(args: argparse.Namespace) -> None:
-    """Fetch Open-Meteo forecasts for the weather grid covering every congestion cell, at quarter-hours."""
+    """Fetch Open-Meteo forecasts for the weather grid squares holding located units, at quarter-hours."""
     config = load_config(args.config)
-    units = pd.read_csv(config.resolve(config.paths.unit_locations))
-    capacity = areas.capacity_by_area(units, config.areas.cell_degrees, config.areas.min_located_mw)
-    _, centres = weather.points_for(capacity, config.weather.grid_degrees)
+    _, centres = weather.points_for(pipeline.unit_places(config), config.weather.grid_degrees)
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     frame = weather.fetch(
         centres, _date(args.start), _date(args.end), today,
@@ -130,24 +128,22 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 
 def cmd_predict(args: argparse.Namespace) -> None:
-    """Issue each direction's cell predictions for one delivery day and log them."""
+    """Issue each direction's unit predictions for one delivery day and log them."""
     day = _date(args.date)
     issued_at = datetime.fromisoformat(args.issued_at) if args.issued_at else None
     for config in _directions(load_config(args.config), args):
         bundle = estimator.load(config.resolve(config.paths.model_dir), config.labels.direction)
-        inputs = pipeline.load_inputs(config)
-        dataset = pipeline.build(config, inputs, None, bundle["area_codes"], [day])
+        inputs = pipeline.load_inputs(config, bundle["units"])
+        dataset = pipeline.build(config, inputs, None, [day])
         predictions = pipeline.predict_day(bundle, dataset, day, issued_at)
         path = config.resolve(config.paths.predictions)
         ledger.append(predictions, path)
 
-        top = predictions.groupby("area")["expected_mwh"].sum().sort_values(ascending=False).head(args.top)
-        size = bundle["cell_degrees"]
+        top = predictions.groupby("unit")["expected_mwh"].sum().sort_values(ascending=False).head(args.top)
         print(f"{config.labels.direction}: {len(predictions)} rows for {day:%Y-%m-%d}, "
-              f"{predictions['expected_mwh'].sum():,.0f} MWh expected; top cells (centre lat, lon, expected MWh for the day):")
-        for area, mwh in top.items():
-            lat, lon = areas.cell_center(area, size)
-            print(f"  {area}  ({lat:.2f}, {lon:.2f})  {mwh:,.1f}")
+              f"{predictions['expected_mwh'].sum():,.0f} MWh expected; top units (expected MWh for the day):")
+        for unit, mwh in top.items():
+            print(f"  {unit}  {mwh:,.1f}")
         print(f"logged: {path}")
 
 
@@ -195,10 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--direction", help="train only this direction, e.g. Bajar or Subir")
     train.set_defaults(func=cmd_train)
 
-    predict = sub.add_parser("predict", help="issue area predictions for a delivery day")
+    predict = sub.add_parser("predict", help="issue unit predictions for a delivery day")
     predict.add_argument("--date", required=True, help="delivery date YYYY-MM-DD")
     predict.add_argument("--issued-at", help="ISO timestamp recorded as issue time")
-    predict.add_argument("--top", type=int, default=10, help="number of cells with the most expected MWh to print")
+    predict.add_argument("--top", type=int, default=10, help="number of units with the most expected MWh to print")
     predict.add_argument("--direction", help="predict only this direction")
     predict.set_defaults(func=cmd_predict)
 

@@ -7,7 +7,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import numpy as np
 import pandas as pd
 
 from .timeseries import add_period
@@ -25,15 +24,22 @@ def point_id(lat: float, lon: float, size: float) -> str:
     return f"{math.floor(lat / size) * size:.2f}_{math.floor(lon / size) * size:.2f}"
 
 
-def points_for(capacity: pd.DataFrame, size: float) -> pd.DataFrame:
-    """Map each congestion cell to a weather point and return the points with their centres."""
-    frame = capacity[["area", "cell_lat", "cell_lon"]].copy()
-    frame["point"] = [point_id(lat, lon, size) for lat, lon in zip(frame["cell_lat"], frame["cell_lon"])]
+def points_for(places: pd.DataFrame, size: float, available=None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Map each unit's location to its weather square, or the nearest available one, and return the squares' centres."""
+    frame = places[["unit", "lat", "lon"]].dropna().copy()
+    frame["point"] = [point_id(lat, lon, size) for lat, lon in zip(frame["lat"], frame["lon"])]
+    if available is not None and len(available):
+        known = pd.Series(sorted(available))
+        corners = known.str.split("_", expand=True).astype(float).to_numpy() + size / 2
+        missing = ~frame["point"].isin(set(known))
+        for index in frame.index[missing]:
+            distance = (corners[:, 0] - frame.at[index, "lat"]) ** 2 + (corners[:, 1] - frame.at[index, "lon"]) ** 2
+            frame.at[index, "point"] = known.iloc[int(distance.argmin())]
     centres = frame.drop_duplicates("point")[["point"]].copy()
     corners = centres["point"].str.split("_", expand=True).astype(float)
     centres["lat"] = corners[0] + size / 2
     centres["lon"] = corners[1] + size / 2
-    return frame[["area", "point"]], centres.reset_index(drop=True)
+    return frame[["unit", "point"]].reset_index(drop=True), centres.reset_index(drop=True)
 
 
 def _request(url: str, params: dict, opener=urllib.request.urlopen, sleep=time.sleep, attempts: int = 6) -> list[dict]:
@@ -107,15 +113,3 @@ def fetch(
     if not frames:
         return pd.DataFrame(columns=KEY + list(VARIABLES))
     return pd.concat(frames, ignore_index=True)
-
-
-def wind_output(speed_kmh: pd.Series) -> np.ndarray:
-    """Return a generic turbine's output as a share of capacity for a 100 m wind speed."""
-    speed = np.asarray(speed_kmh, dtype=float) / 3.6
-    ramp = np.clip((speed - 3.0) / (12.0 - 3.0), 0.0, 1.0) ** 3
-    return np.where(speed > 25.0, 0.0, ramp)
-
-
-def solar_output(radiation: pd.Series) -> np.ndarray:
-    """Return a solar plant's output as a share of capacity for a global horizontal irradiance."""
-    return np.clip(np.asarray(radiation, dtype=float) / 1000.0, 0.0, 1.0)

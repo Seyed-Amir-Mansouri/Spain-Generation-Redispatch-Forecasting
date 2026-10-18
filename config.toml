@@ -16,19 +16,16 @@ hourly_market = "data/raw/market.csv"
 hourly_constraints = "data/raw/constraints.csv"
 hourly_weather = "data/raw/weather.csv"
 
-# start is the first day of 15-minute data; hourly data from hourly_start is split into quarters
+# start is the first day of 15-minute data; set hourly_start to also use earlier hourly data split into quarters
 [data]
 start = "2025-10-01"
-hourly_start = "2025-05-01"
 
 [esios]
 request_interval_seconds = 6
 
-[areas]
-cell_degrees = 1.0
-min_located_mw = 200
-estimate_unplaced = true
-estimate_top_cells = 1
+# a programming unit gets predictions when it was redispatched in at least min_events quarter-hours before the held-out days
+[units]
+min_events = 50
 
 # Open-Meteo weather grid
 [weather]
@@ -47,8 +44,6 @@ Bajar = ["SCB", "SCA", "RTD", "EST", "CEX", "PEV", "COT"]
 Subir = ["SCB", "SCA", "RTD", "COT", "SOT", "RSI", "DAN", "PCB"]
 
 [features]
-history_days = 28
-event_lag_days = 91
 use_ida3 = true
 
 # REE e-sios indicator ids

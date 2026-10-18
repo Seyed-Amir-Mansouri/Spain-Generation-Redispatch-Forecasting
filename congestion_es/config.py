@@ -32,11 +32,8 @@ class Paths:
 
 
 @dataclass(frozen=True)
-class Areas:
-    cell_degrees: float
-    min_located_mw: float
-    estimate_unplaced: bool = False
-    estimate_top_cells: int = 1
+class Units:
+    min_events: int
 
 
 @dataclass(frozen=True)
@@ -58,8 +55,6 @@ class Labels:
 
 @dataclass(frozen=True)
 class Features:
-    history_days: int
-    event_lag_days: int
     use_ida3: bool
 
 
@@ -75,7 +70,7 @@ class Config:
     paths: Paths
     start: pd.Timestamp
     request_interval_seconds: float
-    areas: Areas
+    units: Units
     weather: Weather
     labels: Labels
     features: Features
@@ -104,7 +99,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         paths=Paths(**{key: Path(value) for key, value in raw["paths"].items()}),
         start=pd.Timestamp(raw["data"]["start"]),
         request_interval_seconds=float(raw["esios"]["request_interval_seconds"]),
-        areas=Areas(**raw["areas"]),
+        units=Units(**raw["units"]),
         weather=Weather(**raw["weather"]),
         labels=Labels(
             directions=tuple(labels["directions"]),

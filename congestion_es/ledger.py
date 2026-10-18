@@ -6,8 +6,8 @@ import pandas as pd
 
 from . import metrics
 
-PREDICTION_COLUMNS = ["delivery_date", "period", "area", "direction", "issued_at", "model_version", "risk_probability", "risk_flag", "expected_mwh"]
-KEY = ["delivery_date", "period", "area", "direction"]
+PREDICTION_COLUMNS = ["delivery_date", "period", "unit", "direction", "issued_at", "model_version", "risk_probability", "risk_flag", "expected_mwh"]
+KEY = ["delivery_date", "period", "unit", "direction"]
 
 
 def append(predictions: pd.DataFrame, path: Path) -> None:
@@ -22,7 +22,7 @@ def load(path: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"No prediction ledger at {path}; run the predict command first")
     ledger = pd.read_csv(path)
     ledger["delivery_date"] = pd.to_datetime(ledger["delivery_date"]).dt.normalize()
-    ledger["area"] = ledger["area"].astype(str)
+    ledger["unit"] = ledger["unit"].astype(str)
     ledger["issued_at"] = pd.to_datetime(ledger["issued_at"], utc=True)
     return ledger
 
@@ -46,8 +46,8 @@ def evaluate(
     window_start = label_end - pd.Timedelta(days=window_days - 1)
     recent = labelled[labelled["delivery_date"] >= window_start]
 
-    overall = metrics.score(labelled["congested"], labelled["risk_probability"], threshold)
-    window = metrics.score(recent["congested"], recent["risk_probability"], threshold)
+    overall = metrics.score(labelled["redispatched"], labelled["risk_probability"], threshold)
+    window = metrics.score(recent["redispatched"], recent["risk_probability"], threshold)
 
     skill = window["skill"]
     alert = bool(pd.notna(skill) and skill < min_skill)
