@@ -7,8 +7,8 @@ from .config import Config
 from .timeseries import MARKET_KEY
 
 KEY = MARKET_KEY + ["unit"]
-CATEGORICAL = ["unit_id"]
-UNIT_COLUMNS = ["unit_id", "unit_redispatch_rate", "unit_mean_mwh"]
+CATEGORICAL = ["unit_id", "technology_id"]
+UNIT_COLUMNS = ["unit_id", "technology_id"]
 
 # readable model names for the source columns
 SOURCE_NAMES = {

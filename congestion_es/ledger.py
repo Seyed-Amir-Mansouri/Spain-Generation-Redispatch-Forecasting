@@ -6,8 +6,8 @@ import pandas as pd
 
 from . import metrics
 
-PREDICTION_COLUMNS = ["delivery_date", "period", "unit", "direction", "issued_at", "model_version", "risk_probability", "risk_flag", "expected_mwh"]
-KEY = ["delivery_date", "period", "unit", "direction"]
+PREDICTION_COLUMNS = ["delivery_date", "period", "unit", "issued_at", "model_version", "down_probability", "up_probability", "decision"]
+KEY = ["delivery_date", "period", "unit"]
 
 
 def append(predictions: pd.DataFrame, path: Path) -> None:
@@ -42,15 +42,20 @@ def evaluate(
     threshold: float,
     min_skill: float,
 ) -> dict:
-    """Score labelled predictions overall and over a recent window, and check the skill alert."""
+    """Count right and wrong up/down/nothing calls and score each direction's probability, overall and over a recent window."""
     window_start = label_end - pd.Timedelta(days=window_days - 1)
     recent = labelled[labelled["delivery_date"] >= window_start]
 
-    overall = metrics.score(labelled["redispatched"], labelled["risk_probability"], threshold)
-    window = metrics.score(recent["redispatched"], recent["risk_probability"], threshold)
+    def scores(frame: pd.DataFrame) -> dict:
+        result = metrics.decision_counts(frame)
+        for name in ("down", "up"):
+            probability = metrics.score(frame["actual"] == name, frame[f"{name}_probability"], threshold)
+            result.update({f"{name}_{key}": probability[key] for key in ("brier", "skill", "roc_auc")})
+        return result
 
-    skill = window["skill"]
-    alert = bool(pd.notna(skill) and skill < min_skill)
+    overall, window = scores(labelled), scores(recent)
+    skills = [window[f"{name}_skill"] for name in ("down", "up")]
+    alert = any(pd.notna(skill) and skill < min_skill for skill in skills)
     return {
         "as_of": as_of.isoformat(),
         "label_end": label_end.date().isoformat(),

@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "congestion_es"
 version = "0.1.0"
-description = "Hourly location of congestion redispatch in the Spanish peninsular grid"
+description = "Day-ahead up, down or no redispatch per programming unit in the Spanish peninsular grid"
 requires-python = ">=3.11"
 dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",
     "scikit-learn>=1.4",
+    "lightgbm>=4.0",
     "joblib>=1.3",
     "entsoe-py>=0.8",
     "xlrd>=2.0.1",

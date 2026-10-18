@@ -7,11 +7,12 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from lightgbm import LGBMClassifier
 
 from . import metrics
 
 MODEL_FILE = "redispatch_model_{direction}.joblib"
+HOLDOUT_COLUMNS = ["delivery_date", "period", "unit"]
 
 
 @dataclass(frozen=True)
@@ -19,27 +20,39 @@ class Settings:
     test_days: int
     threshold: float
     learning_rate: float
-    max_iter: int
-    max_leaf_nodes: int
+    n_estimators: int
+    num_leaves: int
     random_state: int
     negative_fraction: float = 1.0
     recency_half_life_days: float = 0.0
-    l2_regularization: float = 0.0
-    min_samples_leaf: int = 20
+    reg_lambda: float = 0.0
+    min_child_samples: int = 20
+    max_cat_threshold: int = 32
+    cat_smooth: float = 10.0
+    cat_l2: float = 10.0
+    min_data_per_group: int = 100
 
 
-def _estimator(settings: Settings, categorical: list[str], features: list[str]) -> HistGradientBoostingClassifier:
-    """Build an untrained classifier from the model settings."""
-    mask = [name in categorical for name in features] if categorical else None
-    return HistGradientBoostingClassifier(
+def _estimator(settings: Settings) -> LGBMClassifier:
+    """Build an untrained yes/no classifier from the model settings."""
+    return LGBMClassifier(
         learning_rate=settings.learning_rate,
-        max_iter=settings.max_iter,
-        max_leaf_nodes=settings.max_leaf_nodes,
-        l2_regularization=settings.l2_regularization,
-        min_samples_leaf=settings.min_samples_leaf,
+        n_estimators=settings.n_estimators,
+        num_leaves=settings.num_leaves,
+        reg_lambda=settings.reg_lambda,
+        min_child_samples=settings.min_child_samples,
+        max_cat_threshold=settings.max_cat_threshold,
+        cat_smooth=settings.cat_smooth,
+        cat_l2=settings.cat_l2,
+        min_data_per_group=settings.min_data_per_group,
         random_state=settings.random_state,
-        categorical_features=mask,
+        verbose=-1,
     )
+
+
+def _fit(settings: Settings, categorical: list[str], features: list[str], rows: pd.DataFrame, weights: np.ndarray) -> LGBMClassifier:
+    """Fit one classifier with the given categorical inputs."""
+    return _estimator(settings).fit(rows[features], rows["target"].astype(int), sample_weight=weights, categorical_feature=categorical or "auto")
 
 
 def _sample(frame: pd.DataFrame, fraction: float, seed: int) -> tuple[pd.DataFrame, np.ndarray]:
@@ -65,8 +78,8 @@ def train(
     settings: Settings,
     categorical: list[str] | None = None,
     extra: dict | None = None,
-) -> tuple[dict, dict]:
-    """Fit on history, score the most recent days, then refit on all labels."""
+) -> tuple[dict, dict, pd.DataFrame | None]:
+    """Fit on history, score the most recent days, then refit on all labels; also return the scored holdout rows."""
     categorical = categorical or []
     known = dataset["target"].notna()
     labelled = dataset if known.all() else dataset[known].reset_index(drop=True)
@@ -79,20 +92,17 @@ def train(
 
     report = {"train_rows": int(len(fit_part)), "test_rows": int(len(test_part)), "negative_fraction": settings.negative_fraction}
     presampled = "weight" in labelled
+    holdout = None
     if len(fit_part) and len(test_part):
         if presampled:
             rows, weights = fit_part, fit_part["weight"].to_numpy()
         else:
             rows, weights = _sample(fit_part, settings.negative_fraction, settings.random_state)
         weights = weights * _recency(rows["delivery_date"], cutoff, settings.recency_half_life_days)
-        holdout = _estimator(settings, categorical, features).fit(rows[features], rows["target"], sample_weight=weights)
-        probability = holdout.predict_proba(test_part[features])[:, 1]
+        model = _fit(settings, categorical, features, rows, weights)
+        probability = model.predict_proba(test_part[features])[:, 1]
         report["holdout"] = metrics.score(test_part["target"], probability, settings.threshold)
-        if "target_mwh" in test_part:
-            size = _size_estimator(settings, categorical, features, rows, weights)
-            expected = probability * size.predict(test_part[features])
-            scored = test_part[["delivery_date", "period", "unit"]].assign(mwh=test_part["target_mwh"].to_numpy(), expected_mwh=expected)
-            report["holdout_energy"] = metrics.energy(scored)
+        holdout = test_part[HOLDOUT_COLUMNS].assign(target=test_part["target"].to_numpy(), probability=probability).reset_index(drop=True)
 
     if presampled:
         # the holdout days were kept whole, so only they are sampled here
@@ -102,35 +112,18 @@ def train(
     else:
         rows, weights = _sample(labelled, settings.negative_fraction, settings.random_state)
     weights = weights * _recency(rows["delivery_date"], labelled["delivery_date"].max(), settings.recency_half_life_days)
-    estimator = _estimator(settings, categorical, features).fit(rows[features], rows["target"], sample_weight=weights)
+    estimator = _fit(settings, categorical, features, rows, weights)
     trained_at = datetime.now(timezone.utc)
     bundle = {
         "estimator": estimator,
-        "size_estimator": _size_estimator(settings, categorical, features, rows, weights) if "target_mwh" in rows else None,
         "features": list(features),
         "threshold": settings.threshold,
-        "model_version": f"hgb-{trained_at:%Y%m%dT%H%M%SZ}",
+        "model_version": f"lgbm-{trained_at:%Y%m%dT%H%M%SZ}",
         "trained_at": trained_at.isoformat(),
         **(extra or {}),
     }
     report["model_version"] = bundle["model_version"]
-    return bundle, report
-
-
-def _size_estimator(settings: Settings, categorical: list[str], features: list[str], rows: pd.DataFrame, weights: np.ndarray):
-    """Fit a Poisson regressor for the MWh redispatched in rows that reach the label threshold."""
-    positive = (rows["target"] == 1).to_numpy()
-    mask = [name in categorical for name in features] if categorical else None
-    return HistGradientBoostingRegressor(
-        loss="poisson",
-        learning_rate=settings.learning_rate,
-        max_iter=settings.max_iter,
-        max_leaf_nodes=settings.max_leaf_nodes,
-        l2_regularization=settings.l2_regularization,
-        min_samples_leaf=settings.min_samples_leaf,
-        random_state=settings.random_state,
-        categorical_features=mask,
-    ).fit(rows.loc[positive, features], rows.loc[positive, "target_mwh"], sample_weight=weights[positive])
+    return bundle, report, holdout
 
 
 def model_path(model_dir: Path, direction: str) -> Path:
@@ -157,10 +150,3 @@ def load(model_dir: Path, direction: str) -> dict:
 def predict(bundle: dict, dataset: pd.DataFrame) -> np.ndarray:
     """Return redispatch probabilities for each feature row."""
     return bundle["estimator"].predict_proba(dataset[bundle["features"]])[:, 1]
-
-
-def predict_mwh(bundle: dict, dataset: pd.DataFrame, probability: np.ndarray) -> np.ndarray:
-    """Return expected MWh per row: the redispatch probability times the size model's MWh."""
-    if bundle.get("size_estimator") is None:
-        return np.full(len(dataset), np.nan)
-    return probability * bundle["size_estimator"].predict(dataset[bundle["features"]])

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import esios, estimator, i90, ledger, locations, market, omie, pipeline, validate, weather
+from . import esios, estimator, i90, ledger, locations, market, metrics, omie, pipeline, validate, weather
 from .config import DEFAULT_CONFIG, Config, load_config
 
 
@@ -116,51 +116,62 @@ def _directions(config: Config, args: argparse.Namespace) -> list[Config]:
 
 
 def cmd_train(args: argparse.Namespace) -> None:
-    """Build each direction's dataset from history and save its trained models."""
-    for config in _directions(load_config(args.config), args):
-        inputs = pipeline.load_inputs(config)
+    """Pick the units, build each direction's dataset from history, save its model, and score the up/down/nothing calls."""
+    base = load_config(args.config)
+    units = pipeline.select_units(base)
+    holdouts = {}
+    for config in _directions(base, args):
+        inputs = pipeline.load_inputs(config, units)
         dataset = pipeline.build_training(config, inputs, pipeline.label_cutoff(config))
-        bundle, report = pipeline.train(config, inputs, dataset)
+        bundle, report, holdouts[config.labels.direction] = pipeline.train(config, inputs, dataset)
         path = estimator.save(bundle, config.resolve(config.paths.model_dir))
         del dataset
         print(json.dumps(report, indent=2, default=str))
         print(f"saved: {path}")
+    if all(holdouts.get(direction) is not None for direction in pipeline.DIRECTION_NAMES):
+        decisions = pipeline.holdout_decisions(holdouts, base.model.threshold)
+        print(json.dumps({"holdout_decisions": metrics.decision_counts(decisions)}, indent=2, default=str))
 
 
 def cmd_predict(args: argparse.Namespace) -> None:
-    """Issue each direction's unit predictions for one delivery day and log them."""
+    """Call each unit up, down or nothing for every quarter-hour of one delivery day and log the calls."""
+    config = load_config(args.config)
     day = _date(args.date)
     issued_at = datetime.fromisoformat(args.issued_at) if args.issued_at else None
-    for config in _directions(load_config(args.config), args):
-        bundle = estimator.load(config.resolve(config.paths.model_dir), config.labels.direction)
-        inputs = pipeline.load_inputs(config, bundle["units"])
-        dataset = pipeline.build(config, inputs, None, [day])
-        predictions = pipeline.predict_day(bundle, dataset, day, issued_at)
-        path = config.resolve(config.paths.predictions)
-        ledger.append(predictions, path)
+    model_dir = config.resolve(config.paths.model_dir)
+    bundles = {direction: estimator.load(model_dir, direction) for direction in pipeline.DIRECTION_NAMES}
+    units = bundles["Bajar"]["units"]
+    if not units.equals(bundles["Subir"]["units"]):
+        print("the downward and upward models were trained on different units; run train for both directions", file=sys.stderr)
+        sys.exit(1)
+    inputs = pipeline.load_inputs(config, units)
+    dataset = pipeline.build(config, inputs, None, [day])
+    predictions = pipeline.predict_day(bundles, dataset, day, config.model.threshold, issued_at)
+    path = config.resolve(config.paths.predictions)
+    ledger.append(predictions, path)
 
-        top = predictions.groupby("unit")["expected_mwh"].sum().sort_values(ascending=False).head(args.top)
-        print(f"{config.labels.direction}: {len(predictions)} rows for {day:%Y-%m-%d}, "
-              f"{predictions['expected_mwh'].sum():,.0f} MWh expected; top units (expected MWh for the day):")
-        for unit, mwh in top.items():
-            print(f"  {unit}  {mwh:,.1f}")
-        print(f"logged: {path}")
+    calls = predictions[predictions["decision"] != "nothing"]
+    print(f"{len(predictions)} rows for {day:%Y-%m-%d}: "
+          + ", ".join(f"{name} {(predictions['decision'] == name).sum():,}" for name in ("down", "up", "nothing")))
+    print("units with the most up or down quarter-hours:")
+    for (unit, decision), count in calls.groupby(["unit", "decision"]).size().sort_values(ascending=False).head(args.top).items():
+        print(f"  {unit}  {decision}  {count} quarter-hours")
+    print(f"logged: {path}")
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    """Score each direction's logged predictions against the per-unit redispatch REE has published so far."""
-    base = load_config(args.config)
+    """Score the logged up/down/nothing calls against the per-unit redispatch REE has published so far."""
+    config = load_config(args.config)
     as_of = _date(args.as_of) if args.as_of else pd.Timestamp(datetime.now(timezone.utc).date())
-    label_end = as_of - pd.Timedelta(days=base.labels.settle_days)
-    predictions = ledger.load(base.resolve(base.paths.predictions))
-    alert = False
-    for config in _directions(base, args):
-        result = validate.evaluate(config, predictions, pipeline.load_inputs(config), label_end, as_of)
-        history = ledger.append_history(result, config.resolve(config.paths.validation))
-        print(json.dumps(result, indent=2, default=str))
-        print(f"history rows: {len(history)}")
-        alert = alert or result["alert"]
-    if alert:
+    label_end = as_of - pd.Timedelta(days=config.labels.settle_days)
+    predictions = ledger.load(config.resolve(config.paths.predictions))
+    units = pd.DataFrame({"unit": sorted(predictions["unit"].unique())})
+    inputs = {direction: pipeline.load_inputs(config.for_direction(direction), units) for direction in pipeline.DIRECTION_NAMES}
+    result = validate.evaluate(config, predictions, inputs, label_end, as_of)
+    history = ledger.append_history(result, config.resolve(config.paths.validation))
+    print(json.dumps(result, indent=2, default=str))
+    print(f"history rows: {len(history)}")
+    if result["alert"]:
         print("ALERT: window skill is below the configured minimum", file=sys.stderr)
         sys.exit(2)
 
@@ -191,16 +202,14 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--direction", help="train only this direction, e.g. Bajar or Subir")
     train.set_defaults(func=cmd_train)
 
-    predict = sub.add_parser("predict", help="issue unit predictions for a delivery day")
+    predict = sub.add_parser("predict", help="call each unit up, down or nothing for a delivery day")
     predict.add_argument("--date", required=True, help="delivery date YYYY-MM-DD")
     predict.add_argument("--issued-at", help="ISO timestamp recorded as issue time")
-    predict.add_argument("--top", type=int, default=10, help="number of units with the most expected MWh to print")
-    predict.add_argument("--direction", help="predict only this direction")
+    predict.add_argument("--top", type=int, default=10, help="number of units with the most up or down quarter-hours to print")
     predict.set_defaults(func=cmd_predict)
 
-    check = sub.add_parser("validate", help="score predictions against published redispatch")
+    check = sub.add_parser("validate", help="score the up/down/nothing calls against published redispatch")
     check.add_argument("--as-of", help="evaluation date YYYY-MM-DD, default today")
-    check.add_argument("--direction", help="validate only this direction")
     check.set_defaults(func=cmd_validate)
     return parser
 

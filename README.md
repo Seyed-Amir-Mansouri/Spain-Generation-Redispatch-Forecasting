@@ -1,6 +1,6 @@
 # A Machine Learning Tool for Generation Redispatch Forecasting in the Spanish Electricity System
 
-This estimator predicts which generating units REE will redispatch in the day-ahead technical-constraint process (Phase I), and by how much. For each 15-minute delivery period, each REE programming unit and each direction, downward (`Bajar`) and upward (`Subir`), it gives the unit's expected redispatched MWh and the probability that it reaches `min_mwh`.
+This estimator predicts which generating units REE will redispatch in the day-ahead technical-constraint process (Phase I). For each 15-minute delivery period and each REE programming unit, it says whether the unit will be moved down (`Bajar`), up (`Subir`) or not at all, with the probability of each direction. The amount is not predicted.
 
 The restriction codes that count are set per direction in `[labels.restriction_types]`. Both directions count every Phase I code found in the I90 files, so the forecast covers all day-ahead technical-constraint redispatch:
 
@@ -47,8 +47,10 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - `high`: an exact or hand-checked match
      - `medium`: any other plant match
      - `low`: placed at a municipality or substation
-3. **Units.** Predictions are made per REE programming unit, the units named in the I90 files. A unit is kept when it was redispatched by at least `min_mwh` in at least `min_events` (50) quarter-hours before the held-out days. That leaves 559 downward and 69 upward units, which carried about 81% of the downward and all of the upward energy on the held-out days. Each kept unit has three fixed descriptors taken from those earlier days: `unit_id`, how often it was redispatched (`unit_redispatch_rate`) and its average MWh when it was (`unit_mean_mwh`). `unit_id` is a categorical input when there are at most 254 units, the limit of the boosting library, and a plain number otherwise, so the two rates are what tell the downward units apart.
-4. **Labels.** Each direction in `directions` gets its own labels. The target is a unit's redispatched MWh in a 15-minute period in that direction. A unit and period also counts as redispatched when that energy reaches `min_mwh` (1.25 MWh, the same rate as 5 MWh per hour). Days with no downloaded file are left unknown instead of being counted as zero.
+3. **Units.** Predictions are made per REE programming unit, the units named in the I90 files. A unit is kept when it was redispatched by at least `min_mwh` in at least `min_events` (50) quarter-hours before the held-out days, in either direction. That gives 559 downward and 69 upward units, 625 in all because 3 qualify both ways; they carried about 81% of the downward and all of the upward energy on the held-out days. Both directions predict for the same 625 units. Each unit has two fixed descriptors, both categorical inputs:
+   - `unit_id`, a number per unit;
+   - `technology_id`, its production type from REE's programming-unit registry, grouped into solar PV, wind, combined cycle, cogeneration, solar thermal, hybrid, hydro, pumped hydro, nuclear, coal and oil, gas, biomass and waste, other, and unknown for the 28 units the registry does not list.
+4. **Labels.** Each direction in `directions` gets its own labels: a unit and 15-minute period counts as redispatched in that direction when its energy there reaches `min_mwh` (1.25 MWh, the same rate as 5 MWh per hour). No unit has ever been moved up and down in the same quarter-hour. Days with no downloaded file are left unknown instead of being counted as zero.
 5. **Features.**
    - **National inputs.** These are quarter-hour series for the whole of Spain:
      - `fetch-market` downloads day-ahead prices plus load, wind and solar forecasts from ENTSO-E.
@@ -57,22 +59,28 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
    - **Regional weather.** `fetch-weather` downloads 100 m wind speed, solar irradiance and temperature forecasts from Open-Meteo. Open-Meteo has only hourly values for Spain, so they are interpolated linearly to quarter-hours:
      - **Grid.** Forecasts come on a 1° grid. Each unit uses the square holding the capacity-weighted centre of its located plants, or the nearest square with a forecast; units that could not be located have no weather.
      - **Sources.** History comes from Open-Meteo's archive of past forecasts, and the last seven days from its live forecast service.
-   - **Not used as inputs.** Plant capacity and location are not model inputs; locations only pick each unit's weather square. Past redispatch is not an input either, apart from the two fixed unit rates, because it arrives 90 days late.
+   - **Not used as inputs.** Plant capacity and location are not model inputs; locations only pick each unit's weather square. Past redispatch is not an input either, because it arrives 90 days late.
 6. **Training and prediction.**
-   - **Two-part model.** Each direction has two gradient-boosted models: a classifier for the probability that the unit's redispatch reaches `min_mwh`, and a Poisson regressor for the MWh when it does. The expected MWh is their product. Below `min_mwh` lies about 4% of the downward energy, which this leaves out.
-   - **Training.** `train` fits both directions, or one with `--direction`. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every redispatched row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows. Because the units REE picks change as the grid changes, each training row's weight is also halved for every `recency_half_life_days` (60) it lies before the last training day; 0 turns this off.
-   - **Report.** The held-out days are scored for the probability (AUC, precision, recall) and for the energy: predicted over actual MWh, mean absolute error, and correlations per unit and quarter-hour, per unit and day, per unit over the whole period and for the national total. The expected MWh runs about a quarter below the actual energy, by an amount that changes from month to month; a correction factor taken from the held-out days made per-area errors larger in an earlier area-level version, so none is applied.
-   - **Threshold.** A unit is flagged when its probability reaches `threshold` (0.8), which favours precision. On the held-out days the unit models gave a precision of 0.84 downward and 0.74 upward, with recall 0.30 and 0.39. They are less accurate than the earlier models that predicted 1° areas (precision 0.94 and 0.88, per-area day correlation 0.85 and 0.92), because REE's choice between units behind the same grid limit is close to random.
-   - **Prediction.** `predict` writes every unit, 15-minute period and direction to the ledger with its probability, flag and expected MWh, and prints the units with the most expected MWh.
-   - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` scores the ledger for each direction with the same measures.
+   - **Two yes/no models.** Each direction has its own LightGBM classifier for the probability that the unit is redispatched that way in the quarter-hour. Their settings are in `[model]`, with the downward model's own values in `[model.Bajar]` (more trees and stronger smoothing of the unit categories, chosen by tuning on the held-out days).
+   - **Up, down or nothing.** A unit-quarter is called `down` or `up` when that model's probability is the higher of the two and reaches `threshold` (0.5), and `nothing` otherwise. Both models being sure at once does not happen in practice: on the held-out days the lower of the two probabilities never exceeded 0.2.
+   - **Training.** `train` picks the units, then fits both directions, or one with `--direction`. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every redispatched row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows. Because the units REE picks change as the grid changes, each training row's weight is also halved for every `recency_half_life_days` (60) it lies before the last training day; 0 turns this off.
+   - **Report.** Each direction's held-out probability is scored (Brier skill, AUC, precision, recall). When both directions are trained together, the up/down/nothing calls on the held-out days are counted per unit-quarter: right, missed, wrong direction and false alarms for each direction, and per quarter-hour how often a direction happened, was called, and had at least one unit right.
+   - **Results.** On the 60 held-out days (19 May – 17 July 2026; 5,760 quarter-hours × 625 units = 3.6 million unit-quarters), 91.8% of calls were right, against 86.5% for always saying `nothing`:
+
+     | | Happened | Called | Right | Missed | Wrong direction | False alarms |
+     | --- | --- | --- | --- | --- | --- | --- |
+     | Down | 377,915 | 314,099 | 235,907 (62%) | 141,502 | 506 | 78,192 |
+     | Up | 107,436 | 94,967 | 62,797 (58%) | 44,639 | 0 | 32,170 |
+
+     75% of `down` calls and 66% of `up` calls were right. Per quarter-hour, downward redispatch happened in 5,189 and was called in 4,138, with 1,148 missed and 97 false alarms; at least one called unit was right in 3,221. Upward redispatch happened in every quarter-hour, and at least one called unit was right in all of them. A threshold of 0.8 gives fewer false alarms (82% and 73% of calls right) but catches only 47% and 38% of the moves. Adding `technology_id` raised the right calls by about 1%.
+   - **Prediction.** `predict` runs both models and writes every unit and 15-minute period to the ledger with the two probabilities and the call, and prints the units with the most up or down quarter-hours.
+   - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` counts the logged calls the same way, overall and over the last `window_days`, and scores each direction's probability.
 
 ## Features
 
-| Group | Inputs |
-| --- | --- |
 | Group | Model names |
 | --- | --- |
-| Unit | `unit_id`, `unit_redispatch_rate`, `unit_mean_mwh` |
+| Unit | `unit_id`, `technology_id` |
 | Calendar | `quarter_hour`, `day_of_week`, `month`, `is_weekend` |
 | Prices (ENTSO-E, OMIE) | `day_ahead_price`, `intraday1_price`, `intraday2_price`, `intraday3_price`, `intraday1_minus_day_ahead_price` (and 2, 3) |
 | Spain forecasts (ENTSO-E) | `demand_forecast_mw`, `wind_generation_forecast_mw`, `solar_generation_forecast_mw`, `demand_minus_wind_solar_mw` |
@@ -93,15 +101,15 @@ congestion_es/
     config.py       loads config.toml into typed objects
     esios.py        throttled client for REE's e-sios API
     i90.py          downloads I90DIA files and extracts per-unit redispatch
-    locations.py    unit registries, plant lists and name matching
+    locations.py    unit registries, plant lists, name matching and technology groups
     market.py       ENTSO-E prices and forecasts, REE's national constraint totals, merging into quarter-hour files
     omie.py         Spanish IDA1-3 prices from OMIE's daily files
-    weather.py      Open-Meteo regional forecasts and wind and solar output curves
+    weather.py      Open-Meteo regional forecasts
     features.py     model inputs with readable names, and the target
-    pipeline.py     loads inputs, builds datasets, trains and issues predictions
+    pipeline.py     picks units, loads inputs, builds datasets, trains and issues up/down/nothing calls
     validate.py     scores the prediction ledger against published redispatch
-    estimator.py    probability and MWh models per direction: holdout scoring, refit, save, load, predict
-    metrics.py      Brier score, skill, ROC AUC, precision, recall and energy errors
+    estimator.py    LightGBM yes/no model per direction: holdout scoring, refit, save, load, predict
+    metrics.py      Brier score, skill, ROC AUC, precision, recall, and up/down/nothing calls and their counts
     timeseries.py   resampling of tz-aware market series to local quarter-hours
     ledger.py       prediction ledger and scoring of settled predictions
     cli.py          command line entry point
@@ -137,7 +145,7 @@ congestion-es fetch-constraints --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-weather --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
 congestion-es train                           # both directions; --direction Subir for one
-congestion-es predict --date 2026-10-15
+congestion-es predict --date 2026-10-15       # needs both directions' models
 congestion-es validate
 ```
 
@@ -157,4 +165,5 @@ To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constra
 - **Late labels.** Per-unit labels arrive 90 days late, so predictions can only be scored per unit three months after delivery.
 - **Weather history.** Open-Meteo's archive stitches together the first hours of successive forecast runs, so historical weather is slightly more accurate than a forecast issued the day before would have been.
 - **Missing IDA1 prices.** On some days OMIE published an empty IDA1 file. Those periods carry no IDA1 price, which the model handles as missing.
-- **Data period.** All inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`). Every source is used at that resolution except weather, which is interpolated. Earlier hourly data can be added for training by setting `[data] hourly_start`. The hourly files under `hourly_*` in `[paths]` are then split into quarter-hours, with each hour's value repeated and energy values divided by four, and placed before `start`. It is not set, so the model trains on 15-minute data only. The fetch commands only write quarter-hour files, so the hourly files come from earlier runs.
+- **Data period.** All inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`). Every source is used at that resolution except weather, which is interpolated. Earlier hourly data can be added for training by setting `[data] hourly_start`. The hourly files under `hourly_*` in `[paths]` are then split into quarter-hours, with each hour's value repeated and energy values divided by four, and placed before `start`. It is not set, so the model trains on 15-minute data only. Adding May–September 2025 this way was tested and gave fewer right calls overall and clearly fewer upward ones, likely because each hour's four quarters look the same and because the grid ran in a reinforced mode after the April 2025 blackout. The fetch commands only write quarter-hour files, so the hourly files come from earlier runs.
+- **No summer in training.** The held-out days are in May–July, but the 15-minute training days run from October to May.

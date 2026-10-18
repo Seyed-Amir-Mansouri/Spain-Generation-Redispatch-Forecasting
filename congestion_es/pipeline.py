@@ -6,12 +6,12 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from . import estimator, i90, ledger, locations, weather
+from . import estimator, i90, ledger, locations, metrics, weather
 from .config import Config
 from .features import CATEGORICAL, KEY, build_dataset, feature_columns
 from .timeseries import hours_to_quarters
 
-MAX_CATEGORIES = 254
+DIRECTION_NAMES = {"Bajar": "down", "Subir": "up"}
 
 
 @dataclass(frozen=True)
@@ -60,23 +60,40 @@ def unit_places(config: Config) -> pd.DataFrame:
     return pd.DataFrame({"unit": sums.index, "lat": sums["wlat"] / sums["mw"], "lon": sums["wlon"] / sums["mw"]}).reset_index(drop=True)
 
 
-def select_units(config: Config, redispatch: pd.DataFrame, days: list[pd.Timestamp]) -> pd.DataFrame:
-    """Keep units redispatched in at least min_events quarter-hours before the held-out days, with how often and how much."""
+def frequent_units(config: Config, redispatch: pd.DataFrame, days: list[pd.Timestamp]) -> set[str]:
+    """Return the units redispatched in at least min_events quarter-hours before the held-out days."""
     cutoff = max(days) - pd.Timedelta(days=config.model.test_days)
     early = redispatch[(redispatch["delivery_date"] <= cutoff) & (redispatch["mwh"] >= config.labels.min_mwh)]
-    stats = early.groupby("unit")["mwh"].agg(["size", "mean"])
-    stats = stats[stats["size"] >= config.units.min_events]
-    quarters = 96 * sum(day <= cutoff for day in days)
-    return pd.DataFrame({
-        "unit": stats.index,
-        "unit_id": range(len(stats)),
-        "unit_redispatch_rate": (stats["size"] / quarters).to_numpy("float32"),
-        "unit_mean_mwh": stats["mean"].to_numpy("float32"),
-    })
+    counts = early.groupby("unit").size()
+    return set(counts[counts >= config.units.min_events].index)
 
 
-def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
-    """Read market, constraint, weather and per-unit redispatch files, and pick the units to predict."""
+def unit_technology(config: Config, units: pd.Series) -> pd.Series:
+    """Return each programming unit's grouped production type from REE's registry."""
+    programming, _ = locations.load_registry(config.resolve(config.paths.registry_dir))
+    registered = programming.drop_duplicates("code").set_index("code")["technology"]
+    return units.map(registered).map(locations.technology_group)
+
+
+def describe_units(config: Config, names) -> pd.DataFrame:
+    """Give each unit a stable id and its technology id."""
+    units = pd.DataFrame({"unit": sorted(names)})
+    units["unit_id"] = np.arange(len(units), dtype="int32")
+    units["technology_id"] = unit_technology(config, units["unit"]).map(locations.TECHNOLOGIES.index).astype("int16")
+    return units
+
+
+def select_units(config: Config) -> pd.DataFrame:
+    """Pick the units frequently redispatched up or down; both directions predict for the same units."""
+    names = set()
+    for direction in config.labels.directions:
+        redispatch, days = load_redispatch(config.for_direction(direction))
+        names |= frequent_units(config, redispatch, days)
+    return describe_units(config, names)
+
+
+def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
+    """Read the config direction's per-unit redispatch per quarter-hour, with unit aliases applied, and the days covered."""
     redispatch, days = _read_redispatch(config, config.paths.redispatch_dir, config.start)
     if config.hourly_start is not None:
         early, early_days = _read_redispatch(config, config.paths.hourly_redispatch_dir, config.hourly_start, config.start)
@@ -84,9 +101,14 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
         days = early_days + days
     redispatch = redispatch.copy()
     redispatch["unit"] = redispatch["unit"].replace(locations.load_aliases(config.resolve(config.paths.unit_aliases)))
-    redispatch = redispatch.groupby(KEY, as_index=False)["mwh"].sum()
+    return redispatch.groupby(KEY, as_index=False)["mwh"].sum(), days
+
+
+def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
+    """Read market, constraint, weather and per-unit redispatch files, and pick the units to predict."""
+    redispatch, days = load_redispatch(config)
     if units is None:
-        units = select_units(config, redispatch, days)
+        units = select_units(config)
     total = redispatch["mwh"].sum()
     covered = redispatch.loc[redispatch["unit"].isin(set(units["unit"])), "mwh"].sum() / total if total else float("nan")
     forecast = _read_input(config, "weather")
@@ -129,42 +151,50 @@ def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> p
     )
 
 
-def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, dict]:
-    """Train one direction's probability and MWh models per unit, with the unit as a categorical input when they are few enough."""
-    categorical = CATEGORICAL if len(inputs.units) <= MAX_CATEGORIES else []
-    bundle, report = estimator.train(
+def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, dict, pd.DataFrame | None]:
+    """Train one direction's yes/no model per unit-quarter, and return its scored holdout rows."""
+    bundle, report, holdout = estimator.train(
         dataset,
         feature_columns(config),
         config.model,
-        categorical=categorical,
+        categorical=CATEGORICAL,
         extra={"units": inputs.units, "direction": config.labels.direction},
     )
     report["direction"] = config.labels.direction
     report["units"] = len(inputs.units)
-    report["unit_categorical"] = bool(categorical)
     report["redispatch_coverage"] = round(inputs.coverage, 3)
     labelled = dataset[dataset["target"].notna()]
     report["labelled_days"] = int(labelled["delivery_date"].nunique())
     weights = labelled["weight"] if "weight" in labelled else None
     report["positive_rate"] = round(float(np.average(labelled["target"], weights=weights)), 4) if len(labelled) else None
-    return bundle, report
+    return bundle, report, holdout
+
+
+def holdout_decisions(holdouts: dict[str, pd.DataFrame], threshold: float) -> pd.DataFrame:
+    """Join each direction's scored holdout rows and call every unit-quarter up, down or nothing."""
+    down = holdouts["Bajar"].rename(columns={"target": "down_target", "probability": "down_probability"})
+    up = holdouts["Subir"].rename(columns={"target": "up_target", "probability": "up_probability"})
+    frame = down.merge(up, on=KEY, how="inner")
+    frame["actual"] = np.select([frame["up_target"] == 1, frame["down_target"] == 1], ["up", "down"], "nothing")
+    frame["decision"] = metrics.decide(frame["down_probability"], frame["up_probability"], threshold)
+    return frame
 
 
 def predict_day(
-    bundle: dict,
+    bundles: dict[str, dict],
     dataset: pd.DataFrame,
     day: pd.Timestamp,
+    threshold: float,
     issued_at: datetime | None = None,
 ) -> pd.DataFrame:
-    """Score one delivery day and return rows ready for the prediction ledger."""
+    """Score one delivery day with the downward and upward models and call each unit-quarter up, down or nothing."""
     rows = dataset[dataset["delivery_date"] == day].copy()
     if rows.empty:
         raise ValueError(f"No inputs found for delivery date {day:%Y-%m-%d}")
     issued_at = issued_at or datetime.now(timezone.utc)
-    rows["risk_probability"] = estimator.predict(bundle, rows)
-    rows["risk_flag"] = (rows["risk_probability"] >= bundle["threshold"]).astype(int)
-    rows["expected_mwh"] = estimator.predict_mwh(bundle, rows, rows["risk_probability"].to_numpy())
-    rows["direction"] = bundle["direction"]
+    for direction, name in DIRECTION_NAMES.items():
+        rows[f"{name}_probability"] = estimator.predict(bundles[direction], rows)
+    rows["decision"] = metrics.decide(rows["down_probability"], rows["up_probability"], threshold)
     rows["issued_at"] = issued_at.isoformat()
-    rows["model_version"] = bundle["model_version"]
+    rows["model_version"] = ";".join(f"{name}:{bundles[direction]['model_version']}" for direction, name in DIRECTION_NAMES.items())
     return rows[ledger.PREDICTION_COLUMNS].reset_index(drop=True)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pandas as pd
@@ -78,14 +78,19 @@ class Config:
     model: Settings
     validation: Validation
     hourly_start: pd.Timestamp | None = None
+    model_overrides: dict[str, dict] = field(default_factory=dict)
 
     def resolve(self, path: Path) -> Path:
         """Return an absolute path relative to the config file's folder."""
         return path if path.is_absolute() else self.root / path
 
     def for_direction(self, direction: str) -> Config:
-        """Return a copy that labels and trains on one redispatch direction."""
-        return replace(self, labels=replace(self.labels, direction=direction, restriction_types=self.labels.codes[direction]))
+        """Return a copy that labels and trains on one redispatch direction, with that direction's model settings."""
+        return replace(
+            self,
+            labels=replace(self.labels, direction=direction, restriction_types=self.labels.codes[direction]),
+            model=replace(self.model, **self.model_overrides.get(direction, {})),
+        )
 
 
 def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
@@ -94,6 +99,8 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
     with path.open("rb") as handle:
         raw = tomllib.load(handle)
     labels = raw["labels"]
+    model = {key: value for key, value in raw["model"].items() if not isinstance(value, dict)}
+    overrides = {key: value for key, value in raw["model"].items() if isinstance(value, dict)}
     return Config(
         root=path.parent,
         paths=Paths(**{key: Path(value) for key, value in raw["paths"].items()}),
@@ -111,7 +118,8 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         ),
         features=Features(**raw["features"]),
         constraint_indicators={name: int(value) for name, value in raw["constraint_indicators"].items()},
-        model=Settings(**raw["model"]),
+        model=Settings(**model),
         validation=Validation(**raw["validation"]),
         hourly_start=pd.Timestamp(raw["data"]["hourly_start"]) if raw["data"].get("hourly_start") else None,
+        model_overrides=overrides,
     )

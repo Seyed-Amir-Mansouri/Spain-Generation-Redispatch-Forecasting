@@ -9,8 +9,8 @@ unit_locations = "data/processed/unit_locations.csv"
 manual_locations = "reference/manual_locations.csv"
 unit_aliases = "reference/unit_aliases.csv"
 model_dir = "models"
-predictions = "outputs/redispatch_predictions.csv"
-validation = "outputs/validation_history.csv"
+predictions = "outputs/redispatch_decisions.csv"
+validation = "outputs/decision_validation.csv"
 hourly_redispatch_dir = "data/raw/i90"
 hourly_market = "data/raw/market.csv"
 hourly_constraints = "data/raw/constraints.csv"
@@ -23,7 +23,7 @@ start = "2025-10-01"
 [esios]
 request_interval_seconds = 6
 
-# a programming unit gets predictions when it was redispatched in at least min_events quarter-hours before the held-out days
+# a programming unit gets predictions when it was redispatched up or down in at least min_events quarter-hours before the held-out days
 [units]
 min_events = 50
 
@@ -62,17 +62,26 @@ up_distribution = 1796
 up_other = 1800
 up_security = 2352
 
+# one LightGBM yes/no model per direction; a unit-quarter is called up or down when that model's probability is the higher one and reaches threshold
 [model]
 test_days = 60
-threshold = 0.8
+threshold = 0.5
 learning_rate = 0.05
-max_iter = 600
-max_leaf_nodes = 63
-l2_regularization = 1.0
-min_samples_leaf = 100
+n_estimators = 600
+num_leaves = 63
+reg_lambda = 1.0
+min_child_samples = 100
+max_cat_threshold = 64
 random_state = 42
 negative_fraction = 0.25
 recency_half_life_days = 60
+
+# settings that differ per direction
+[model.Bajar]
+n_estimators = 1200
+cat_smooth = 50
+cat_l2 = 10
+min_data_per_group = 200
 
 [validation]
 window_days = 14

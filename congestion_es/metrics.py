@@ -36,25 +36,34 @@ def score(y_true: np.ndarray, probability: np.ndarray, threshold: float) -> dict
     }
 
 
-def _corr(a, b) -> float:
-    """Return the Pearson correlation, or NaN when either side is constant."""
-    a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
-    return float(np.corrcoef(a, b)[0, 1]) if len(a) > 1 and a.std() > 0 and b.std() > 0 else float("nan")
+def decide(down_probability, up_probability, threshold: float) -> np.ndarray:
+    """Call each row up, down or nothing: the more likely direction when its probability reaches the threshold."""
+    down, up = np.asarray(down_probability, dtype=float), np.asarray(up_probability, dtype=float)
+    return np.where(np.maximum(down, up) >= threshold, np.where(up > down, "up", "down"), "nothing")
 
 
-def energy(frame: pd.DataFrame) -> dict:
-    """Score expected MWh against actual MWh per unit and quarter-hour, per unit and day, per unit and nationally."""
-    day = frame.groupby(["delivery_date", "unit"])[["mwh", "expected_mwh"]].sum()
-    unit = frame.groupby("unit")[["mwh", "expected_mwh"]].sum()
-    national = frame.groupby(["delivery_date", "period"])[["mwh", "expected_mwh"]].sum()
-    actual = frame["mwh"].sum()
-    return {
-        "actual_gwh": float(actual / 1000),
-        "predicted_to_actual": float(frame["expected_mwh"].sum() / actual) if actual else float("nan"),
-        "mae_mwh": float((frame["expected_mwh"] - frame["mwh"]).abs().mean()),
-        "corr_unit_quarter": _corr(frame["expected_mwh"], frame["mwh"]),
-        "corr_unit_day": _corr(day["expected_mwh"], day["mwh"]),
-        "wape_unit_day": float((day["expected_mwh"] - day["mwh"]).abs().sum() / day["mwh"].sum()) if actual else float("nan"),
-        "corr_unit_total": _corr(unit["expected_mwh"], unit["mwh"]),
-        "corr_national_quarter": _corr(national["expected_mwh"], national["mwh"]),
-    }
+def decision_counts(frame: pd.DataFrame) -> dict:
+    """Count right, missed, wrong-direction and false-alarm calls per unit-quarter, and per quarter-hour for each direction."""
+    actual, decision = frame["actual"].to_numpy(), frame["decision"].to_numpy()
+    result = {"n": int(len(frame)), "correct": int((actual == decision).sum())}
+    result["accuracy"] = result["correct"] / result["n"] if result["n"] else float("nan")
+    for name, other in (("down", "up"), ("up", "down")):
+        happened, said = actual == name, decision == name
+        right = int((happened & said).sum())
+        quarters = frame.assign(happened=happened, said=said, right=happened & said).groupby(["delivery_date", "period"])[["happened", "said", "right"]].any()
+        result.update({
+            f"{name}_happened": int(happened.sum()),
+            f"{name}_said": int(said.sum()),
+            f"{name}_right": right,
+            f"{name}_missed": int((happened & (decision == "nothing")).sum()),
+            f"{name}_wrong_direction": int((happened & (decision == other)).sum()),
+            f"{name}_false_alarms": int(said.sum()) - right,
+            f"{name}_precision": right / said.sum() if said.any() else float("nan"),
+            f"{name}_recall": right / happened.sum() if happened.any() else float("nan"),
+            f"{name}_quarters_happened": int(quarters["happened"].sum()),
+            f"{name}_quarters_said": int(quarters["said"].sum()),
+            f"{name}_quarters_missed": int((quarters["happened"] & ~quarters["said"]).sum()),
+            f"{name}_quarters_false_alarm": int((quarters["said"] & ~quarters["happened"]).sum()),
+            f"{name}_quarters_one_unit_right": int(quarters["right"].sum()),
+        })
+    return result

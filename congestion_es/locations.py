@@ -126,6 +126,24 @@ def plant_sources(technology) -> set[str] | None:
     return None
 
 
+# production types grouped for the model, matched in order; unmatched types are "other" and unregistered units "unknown"
+TECHNOLOGY_GROUPS = (
+    ("fotovoltaica", "solar_pv"), ("solar termica", "solar_thermal"), ("eolica", "wind"), ("ciclo combinado", "combined_cycle"),
+    ("cogeneracion", "cogeneration"), ("hibrida", "hybrid"), ("bombeo", "pumped_hydro"), ("hidraulica", "hydro"),
+    ("fluyente", "hydro"), ("embalse", "hydro"), ("nuclear", "nuclear"), ("hulla", "coal_oil"), ("petroleo", "coal_oil"),
+    ("gas natural", "gas"), ("biomasa", "biomass_waste"), ("residuos", "biomass_waste"), ("biogas", "biomass_waste"),
+)
+TECHNOLOGIES = tuple(dict.fromkeys(name for _, name in TECHNOLOGY_GROUPS)) + ("other", "unknown")
+
+
+def technology_group(technology) -> str:
+    """Group an REE production type into one of TECHNOLOGIES."""
+    if not isinstance(technology, str) or not technology.strip():
+        return "unknown"
+    text = fold(technology)
+    return next((name for key, name in TECHNOLOGY_GROUPS if key in text), "other")
+
+
 def _number(value) -> float:
     """Parse an REE decimal-comma capacity value."""
     try:

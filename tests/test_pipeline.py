@@ -3,15 +3,16 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from congestion_es import estimator, ledger, pipeline, validate, weather
+from congestion_es import estimator, ledger, locations, metrics, pipeline, validate, weather
+from congestion_es.config import DEFAULT_CONFIG, load_config
 from congestion_es.features import feature_columns
 from congestion_es.timeseries import hours_to_quarters
 
 UNITS = ["EOLA", "FVB", "CCGC"]
 
 
-def _inputs(config, days=200, seed=5, extra_labels=None):
-    """Synthetic inputs where two units' redispatch follows the national contingency total."""
+def _inputs(config, direction="Bajar", days=200, seed=5):
+    """Synthetic inputs where EOLA and FVB go down with the national downward total and CCGC goes up with the upward one."""
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2025-06-01", periods=days, freq="D")
     national = pd.MultiIndex.from_product([dates, range(96)], names=["delivery_date", "period"]).to_frame(index=False)
@@ -21,22 +22,25 @@ def _inputs(config, days=200, seed=5, extra_labels=None):
         ida3_price=rng.normal(60, 20, n), load_forecast_mw=rng.normal(28000, 3000, n),
         wind_forecast_mw=rng.gamma(2, 3000, n), solar_forecast_mw=rng.gamma(2, 4000, n),
     )
-    pressure = rng.gamma(1.5, 300, n)
+    down, up = rng.gamma(1.5, 300, n), rng.gamma(1.5, 300, n)
     constraints = national.copy()
     for name in config.constraint_indicators:
         constraints[name] = rng.gamma(1.5, 100, n)
-    constraints["down_overload_contingency"] = pressure
+    constraints["down_overload_contingency"] = down
+    constraints["up_overload_contingency"] = up
 
-    units = pd.DataFrame({"unit": UNITS, "unit_id": [0, 1, 2], "unit_redispatch_rate": [0.3, 0.1, 0.0], "unit_mean_mwh": [60.0, 50.0, 0.0]})
+    units = pd.DataFrame({"unit": UNITS, "unit_id": [0, 1, 2], "technology_id": [2, 0, 3]})
     places = pd.DataFrame({"unit": UNITS, "lat": [37.7, 38.7, 41.2], "lon": [-5.7, -6.2, -0.7]})
 
     rows = []
-    for (day, period), value in zip(national[["delivery_date", "period"]].itertuples(index=False), pressure):
-        if value > 500:
-            rows.append((day, period, UNITS[0], value / 10))
-        if value > 900:
-            rows.append((day, period, UNITS[1], value / 20))
-    redispatch = pd.DataFrame(rows + (extra_labels or []), columns=["delivery_date", "period", "unit", "mwh"])
+    for (day, period), low, high in zip(national[["delivery_date", "period"]].itertuples(index=False), down, up):
+        if direction == "Bajar" and low > 500:
+            rows.append((day, period, UNITS[0], low / 10))
+        if direction == "Bajar" and low > 900:
+            rows.append((day, period, UNITS[1], low / 20))
+        if direction == "Subir" and high > 500:
+            rows.append((day, period, UNITS[2], high / 10))
+    redispatch = pd.DataFrame(rows, columns=["delivery_date", "period", "unit", "mwh"])
     points, _ = weather.points_for(places, config.weather.grid_degrees)
     forecast = national.merge(points[["point"]].drop_duplicates(), how="cross")
     m = len(forecast)
@@ -49,6 +53,16 @@ def _inputs(config, days=200, seed=5, extra_labels=None):
     )
 
 
+def _trained(config, label_end=pd.Timestamp("2025-12-17")):
+    """Train both directions on the synthetic inputs and return their inputs, bundles and holdouts."""
+    inputs, bundles, holdouts = {}, {}, {}
+    for direction in pipeline.DIRECTION_NAMES:
+        inputs[direction] = _inputs(config, direction)
+        dataset = pipeline.build(config, inputs[direction], label_end)
+        bundles[direction], _, holdouts[direction] = pipeline.train(config.for_direction(direction), inputs[direction], dataset)
+    return inputs, bundles, holdouts
+
+
 def test_target_is_unknown_for_missing_days_and_after_label_end(config):
     inputs = _inputs(config, days=40)
     dataset = pipeline.build(config, inputs, pd.Timestamp("2025-06-25"))
@@ -58,20 +72,26 @@ def test_target_is_unknown_for_missing_days_and_after_label_end(config):
     assert dataset.loc[dates > pd.Timestamp("2025-06-25"), "target"].isna().all()
 
 
-def test_train_and_predict_rank_the_redispatched_unit_first(config):
-    inputs = _inputs(config)
-    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-12-17"))
-    bundle, report = pipeline.train(config, inputs, dataset)
-    assert report["holdout"]["roc_auc"] > 0.8
-    assert bundle["features"] == feature_columns(config)
+def test_train_and_predict_call_each_unit_up_down_or_nothing(config):
+    inputs, bundles, holdouts = _trained(config)
+    assert bundles["Bajar"]["features"] == feature_columns(config)
+    assert bundles["Subir"]["direction"] == "Subir"
+
+    decisions = pipeline.holdout_decisions(holdouts, config.model.threshold)
+    counts = metrics.decision_counts(decisions)
+    assert counts["down_recall"] > 0.5 and counts["up_recall"] > 0.5
+    assert counts["down_wrong_direction"] + counts["up_wrong_direction"] == 0
 
     day = pd.Timestamp("2025-12-10")
-    predictions = pipeline.predict_day(bundle, pipeline.build(config, inputs, None), day, datetime(2025, 12, 9, 12, tzinfo=timezone.utc))
+    features = pipeline.build(config, inputs["Bajar"], None)
+    predictions = pipeline.predict_day(bundles, features, day, config.model.threshold, datetime(2025, 12, 9, 12, tzinfo=timezone.utc))
     assert list(predictions.columns) == ledger.PREDICTION_COLUMNS
     assert len(predictions) == 96 * len(UNITS)
-    means = predictions.groupby("unit")["risk_probability"].mean()
-    assert means.idxmax() == UNITS[0]
-    assert estimator.predict(bundle, dataset.head(5)).shape == (5,)
+    assert set(predictions["decision"]) <= {"down", "up", "nothing"}
+    calls = predictions.groupby(["unit", "decision"]).size()
+    assert calls.get(("CCGC", "down"), 0) == 0 and calls.get(("EOLA", "up"), 0) == 0
+    assert calls.get(("EOLA", "down"), 0) > calls.get(("FVB", "down"), 0)
+    assert calls.get(("CCGC", "up"), 0) > 0
 
 
 def test_training_build_samples_negatives_but_keeps_holdout_whole(config):
@@ -86,8 +106,8 @@ def test_training_build_samples_negatives_but_keeps_holdout_whole(config):
     assert late.sum() == (full["delivery_date"] > cutoff).sum()
     assert sampled.loc[early & (sampled["target"] == 0), "weight"].eq(1 / config.model.negative_fraction).all()
     assert abs(sampled["weight"].sum() - len(full)) < 0.05 * len(full)
-    bundle, report = pipeline.train(config, inputs, sampled)
-    assert report["holdout"]["n"] == late.sum()
+    bundle, report, holdout = pipeline.train(config, inputs, sampled)
+    assert report["holdout"]["n"] == late.sum() == len(holdout)
 
 
 def test_hours_to_quarters_repeats_rows_and_splits_energy():
@@ -107,45 +127,57 @@ def test_target_mwh_is_the_attributed_energy_on_labelled_rows(config):
     assert merged.loc[~labelled, "target_mwh"].isna().all()
 
 
-def test_expected_mwh_follows_the_redispatched_unit_and_is_saved_per_direction(config, tmp_path):
-    inputs = _inputs(config)
-    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-12-17"))
-    bundle, report = pipeline.train(config.for_direction("Subir"), inputs, dataset)
-    assert report["holdout_energy"]["corr_unit_day"] > 0.5
-    assert bundle["direction"] == "Subir"
-
-    path = estimator.save(bundle, tmp_path)
+def test_models_are_saved_per_direction(config, tmp_path):
+    _, bundles, _ = _trained(config)
+    path = estimator.save(bundles["Subir"], tmp_path)
     assert path.name == "redispatch_model_subir.joblib"
     loaded = estimator.load(tmp_path, "Subir")
-    predictions = pipeline.predict_day(loaded, pipeline.build(config, inputs, None), pd.Timestamp("2025-12-10"))
-    assert (predictions["direction"] == "Subir").all()
-    assert (predictions["expected_mwh"] >= 0).all()
-    totals = predictions.groupby("unit")["expected_mwh"].sum()
-    assert totals.idxmax() == UNITS[0]
+    assert loaded["model_version"].startswith("lgbm-")
+    assert loaded["units"]["unit"].tolist() == UNITS
 
 
-def test_validation_scores_only_its_direction_with_energy_measures(config):
-    inputs = _inputs(config)
-    dataset = pipeline.build(config, inputs, pd.Timestamp("2025-12-17"))
-    bundle, _ = pipeline.train(config, inputs, dataset)
-    features = pipeline.build(config, inputs, None)
+def test_validation_counts_up_down_and_nothing_calls(config):
+    inputs, bundles, _ = _trained(config)
+    features = pipeline.build(config, inputs["Bajar"], None)
     issued = datetime(2025, 11, 1, tzinfo=timezone.utc)
     days = pd.date_range("2025-11-01", "2025-11-10")
-    predictions = pd.concat([pipeline.predict_day(bundle, features, day, issued) for day in days], ignore_index=True)
-    upward = predictions.assign(direction="Subir", expected_mwh=0.0)
-    ledger_frame = pd.concat([predictions, upward], ignore_index=True)
-    ledger_frame["issued_at"] = pd.to_datetime(ledger_frame["issued_at"], utc=True)
-    result = validate.evaluate(config.for_direction("Bajar"), ledger_frame, inputs, pd.Timestamp("2025-11-10"), pd.Timestamp("2026-02-10"))
-    assert result["direction"] == "Bajar"
+    predictions = pd.concat([pipeline.predict_day(bundles, features, day, config.model.threshold, issued) for day in days], ignore_index=True)
+    predictions["issued_at"] = pd.to_datetime(predictions["issued_at"], utc=True)
+    result = validate.evaluate(config, predictions, inputs, pd.Timestamp("2025-11-10"), pd.Timestamp("2026-02-10"))
     assert result["overall_n"] == len(days) * 96 * len(UNITS)
-    assert result["overall_corr_unit_day"] > 0.5
+    assert result["overall_down_happened"] > 0 and result["overall_up_happened"] > 0
+    assert result["overall_down_recall"] > 0.5 and result["overall_up_recall"] > 0.5
+    assert result["overall_accuracy"] > 0.8
 
 
-def test_each_direction_uses_its_own_restriction_codes(config):
-    down, up = config.for_direction("Bajar"), config.for_direction("Subir")
+def test_decide_picks_the_more_likely_direction_above_the_threshold():
+    decisions = metrics.decide([0.9, 0.2, 0.6, 0.3], [0.1, 0.7, 0.55, 0.4], 0.5)
+    assert decisions.tolist() == ["down", "up", "down", "nothing"]
+
+
+def test_decision_counts_split_right_missed_wrong_direction_and_false_alarms():
+    frame = pd.DataFrame({
+        "delivery_date": pd.Timestamp("2026-01-01"),
+        "period": [0, 0, 0, 1, 1, 1],
+        "actual": ["down", "down", "up", "nothing", "down", "nothing"],
+        "decision": ["down", "nothing", "down", "down", "up", "nothing"],
+    })
+    counts = metrics.decision_counts(frame)
+    assert counts["correct"] == 2
+    assert (counts["down_happened"], counts["down_said"], counts["down_right"]) == (3, 3, 1)
+    assert (counts["down_missed"], counts["down_wrong_direction"], counts["down_false_alarms"]) == (1, 1, 2)
+    assert (counts["up_happened"], counts["up_right"], counts["up_wrong_direction"], counts["up_false_alarms"]) == (1, 0, 1, 1)
+    assert (counts["down_quarters_happened"], counts["down_quarters_said"], counts["down_quarters_one_unit_right"]) == (2, 2, 1)
+    assert (counts["up_quarters_happened"], counts["up_quarters_missed"], counts["up_quarters_false_alarm"]) == (1, 1, 1)
+
+
+def test_each_direction_uses_its_own_restriction_codes_and_model_settings():
+    loaded = load_config(DEFAULT_CONFIG)
+    down, up = loaded.for_direction("Bajar"), loaded.for_direction("Subir")
     assert {"SCB", "SCA", "RTD", "EST"} <= set(down.labels.restriction_types)
     assert {"COT", "SOT", "RSI"} <= set(up.labels.restriction_types)
     assert up.labels.direction == "Subir"
+    assert down.model.n_estimators > up.model.n_estimators == loaded.model.n_estimators
 
 
 def test_recency_weight_halves_every_half_life():
@@ -164,13 +196,21 @@ def test_negative_sampling_keeps_positives_and_reweights_negatives():
     assert abs(weights.sum() - len(frame)) < 800
 
 
-def test_select_units_keeps_frequent_units_from_before_the_holdout(config):
+def test_frequent_units_counts_only_large_redispatch_before_the_holdout(config):
     days = list(pd.date_range("2026-01-01", periods=30, freq="D"))
     often = [(day, period, "OFTEN", 5.0) for day in days[:20] for period in range(3)]
     late = [(day, period, "LATE", 5.0) for day in days[-config.model.test_days:] for period in range(10)]
     small = [(day, 0, "SMALL", 1.0) for day in days]
     redispatch = pd.DataFrame(often + late + small, columns=["delivery_date", "period", "unit", "mwh"])
-    units = pipeline.select_units(config, redispatch, days)
-    assert units["unit"].tolist() == ["OFTEN"]
-    assert units.loc[0, "unit_redispatch_rate"] == np.float32(60 / (96 * 20))
-    assert units.loc[0, "unit_mean_mwh"] == 5.0
+    assert pipeline.frequent_units(config, redispatch, days) == {"OFTEN"}
+
+
+def test_technology_groups_registry_production_types():
+    assert locations.technology_group("Solar fotovoltaica") == "solar_pv"
+    assert locations.technology_group("Eólica terrestre") == "wind"
+    assert locations.technology_group("Ciclo Combinado") == "combined_cycle"
+    assert locations.technology_group("Consumo bombeo") == "pumped_hydro"
+    assert locations.technology_group("Hidráulica no UGH") == "hydro"
+    assert locations.technology_group("Batería electroquímica") == "other"
+    assert locations.technology_group(None) == "unknown"
+    assert set(locations.TECHNOLOGIES) >= {"solar_pv", "wind", "other", "unknown"}
