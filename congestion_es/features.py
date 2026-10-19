@@ -19,11 +19,11 @@ SOURCE_NAMES = {
     "load_forecast_mw": "demand_forecast_mw",
     "wind_forecast_mw": "wind_generation_forecast_mw",
     "solar_forecast_mw": "solar_generation_forecast_mw",
-    "wind_speed_100m": "wind_speed_kmh",
-    "shortwave_radiation": "solar_radiation_wm2",
-    "temperature_2m": "temperature_c",
+    "wind_speed_100m": "area_wind_speed_kmh",
+    "shortwave_radiation": "area_solar_radiation_wm2",
+    "cloud_cover": "area_cloud_cover_pct",
 }
-WEATHER_COLUMNS = ["wind_speed_kmh", "solar_radiation_wm2", "temperature_c"]
+WEATHER_COLUMNS = ["area_wind_speed_kmh", "area_solar_radiation_wm2", "area_cloud_cover_pct"]
 
 
 def spain_redispatch_name(indicator: str) -> str:
@@ -47,7 +47,7 @@ def feature_columns(config: Config) -> list[str]:
 
 
 def add_weather(frame: pd.DataFrame, weather: pd.DataFrame, points: pd.DataFrame) -> pd.DataFrame:
-    """Attach the weather forecast at each unit's location."""
+    """Attach the weather forecast of each unit's area."""
     weather = weather.merge(points, on="point", how="inner").drop(columns="point").rename(columns=SOURCE_NAMES)
     return frame.merge(weather, on=KEY, how="left")
 

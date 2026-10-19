@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import datetime, timezone
 
 import numpy as np
@@ -41,11 +42,11 @@ def _inputs(config, direction="Bajar", days=200, seed=5):
         if direction == "Subir" and high > 500:
             rows.append((day, period, UNITS[2], high / 10))
     redispatch = pd.DataFrame(rows, columns=["delivery_date", "period", "unit", "mwh"])
-    points, _ = weather.points_for(places, config.weather.grid_degrees)
+    points, _ = weather.area_weather(places, weather.spots_for(places, config.weather.spot_degrees), pd.DataFrame(columns=weather.KEY + list(weather.VARIABLES)), config.weather.area_degrees)
     forecast = national.merge(points[["point"]].drop_duplicates(), how="cross")
     m = len(forecast)
     forecast = forecast.assign(
-        wind_speed_100m=rng.gamma(2, 10, m), shortwave_radiation=rng.uniform(0, 900, m), temperature_2m=rng.normal(18, 6, m)
+        wind_speed_100m=rng.gamma(2, 10, m), shortwave_radiation=rng.uniform(0, 900, m), cloud_cover=rng.uniform(0, 100, m)
     )
     return pipeline.Inputs(
         market=market, constraints=constraints, units=units, weather=forecast, points=points, redispatch=redispatch,
@@ -214,3 +215,15 @@ def test_technology_groups_registry_production_types():
     assert locations.technology_group("Batería electroquímica") == "other"
     assert locations.technology_group(None) == "unknown"
     assert set(locations.TECHNOLOGIES) >= {"solar_pv", "wind", "other", "unknown"}
+
+
+def test_located_units_keeps_units_whose_plants_are_all_located_with_the_wanted_confidence(config, tmp_path):
+    path = tmp_path / "locations.csv"
+    pd.DataFrame({
+        "programming_unit": ["SURE", "SURE", "MIXED", "MIXED", "NONE"],
+        "confidence": ["high", "high", "high", "medium", None],
+    }).to_csv(path, index=False)
+    located = dataclasses.replace(config, paths=dataclasses.replace(config.paths, unit_locations=path))
+    assert pipeline.located_units(located, {"SURE", "MIXED", "NONE", "UNKNOWN"}) == {"SURE"}
+    every = dataclasses.replace(located, units=dataclasses.replace(config.units, location_confidence=""))
+    assert pipeline.located_units(every, {"SURE", "MIXED"}) == {"SURE", "MIXED"}

@@ -34,13 +34,16 @@ class Paths:
 @dataclass(frozen=True)
 class Units:
     min_events: int
+    location_confidence: str = ""
 
 
 @dataclass(frozen=True)
 class Weather:
-    grid_degrees: float
+    spot_degrees: float
+    area_degrees: float
     points_per_request: int
     request_interval_seconds: float
+    calls_per_hour: float
 
 
 @dataclass(frozen=True)

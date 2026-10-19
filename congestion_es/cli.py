@@ -80,14 +80,15 @@ def cmd_fetch_intraday(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch_weather(args: argparse.Namespace) -> None:
-    """Fetch Open-Meteo forecasts for the weather grid squares holding located units, at quarter-hours."""
+    """Fetch Open-Meteo forecasts at the spots of the predicted wind and solar units, at quarter-hours."""
     config = load_config(args.config)
-    _, centres = weather.points_for(pipeline.unit_places(config), config.weather.grid_degrees)
+    centres = pipeline.weather_spots(config, pipeline.select_units(config))
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     frame = weather.fetch(
         centres, _date(args.start), _date(args.end), today,
         per_request=config.weather.points_per_request,
         interval_seconds=config.weather.request_interval_seconds,
+        calls_per_hour=config.weather.calls_per_hour,
     )
     merged = market.upsert(config.resolve(config.paths.weather), frame, key=weather.KEY)
     print(f"weather: {len(centres)} points, {len(frame)} new rows, {len(merged)} total")
@@ -189,7 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name, func, text in (
         ("fetch-market", cmd_fetch_market, "fetch ENTSO-E day-ahead prices and forecasts"),
         ("fetch-intraday", cmd_fetch_intraday, "fetch OMIE IDA1-3 prices"),
-        ("fetch-weather", cmd_fetch_weather, "fetch Open-Meteo regional weather forecasts"),
+        ("fetch-weather", cmd_fetch_weather, "fetch Open-Meteo weather at the wind and solar spots"),
         ("fetch-constraints", cmd_fetch_constraints, "fetch REE national constraint totals"),
         ("fetch-redispatch", cmd_fetch_redispatch, "download per-unit redispatch files (I90DIA)"),
     ):

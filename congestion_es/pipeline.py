@@ -12,6 +12,7 @@ from .features import CATEGORICAL, KEY, build_dataset, feature_columns
 from .timeseries import hours_to_quarters
 
 DIRECTION_NAMES = {"Bajar": "down", "Subir": "up"}
+WEATHER_TECHNOLOGIES = ("wind", "solar_pv", "solar_thermal", "hybrid")
 
 
 @dataclass(frozen=True)
@@ -60,12 +61,30 @@ def unit_places(config: Config) -> pd.DataFrame:
     return pd.DataFrame({"unit": sums.index, "lat": sums["wlat"] / sums["mw"], "lon": sums["wlon"] / sums["mw"]}).reset_index(drop=True)
 
 
+def weather_spots(config: Config, units: pd.DataFrame) -> pd.DataFrame:
+    """Return the weather spots of the placed wind and solar units among those predicted."""
+    ids = [locations.TECHNOLOGIES.index(name) for name in WEATHER_TECHNOLOGIES]
+    places = unit_places(config)
+    green = places[places["unit"].isin(set(units.loc[units["technology_id"].isin(ids), "unit"]))]
+    return weather.spots_for(green, config.weather.spot_degrees)
+
+
 def frequent_units(config: Config, redispatch: pd.DataFrame, days: list[pd.Timestamp]) -> set[str]:
     """Return the units redispatched in at least min_events quarter-hours before the held-out days."""
     cutoff = max(days) - pd.Timedelta(days=config.model.test_days)
     early = redispatch[(redispatch["delivery_date"] <= cutoff) & (redispatch["mwh"] >= config.labels.min_mwh)]
     counts = early.groupby("unit").size()
     return set(counts[counts >= config.units.min_events].index)
+
+
+def located_units(config: Config, names: set[str]) -> set[str]:
+    """Keep the units whose physical units were all located with the configured confidence, or all units when it is unset."""
+    wanted = config.units.location_confidence
+    if not wanted:
+        return names
+    physical = pd.read_csv(config.resolve(config.paths.unit_locations))
+    sure = physical.groupby("programming_unit")["confidence"].agg(lambda values: bool((values == wanted).all()))
+    return names & set(sure[sure].index)
 
 
 def unit_technology(config: Config, units: pd.Series) -> pd.Series:
@@ -84,12 +103,12 @@ def describe_units(config: Config, names) -> pd.DataFrame:
 
 
 def select_units(config: Config) -> pd.DataFrame:
-    """Pick the units frequently redispatched up or down; both directions predict for the same units."""
+    """Pick the located units frequently redispatched up or down; both directions predict for the same units."""
     names = set()
     for direction in config.labels.directions:
         redispatch, days = load_redispatch(config.for_direction(direction))
         names |= frequent_units(config, redispatch, days)
-    return describe_units(config, names)
+    return describe_units(config, located_units(config, names))
 
 
 def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
@@ -111,8 +130,9 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
         units = select_units(config)
     total = redispatch["mwh"].sum()
     covered = redispatch.loc[redispatch["unit"].isin(set(units["unit"])), "mwh"].sum() / total if total else float("nan")
-    forecast = _read_input(config, "weather")
-    points, _ = weather.points_for(unit_places(config), config.weather.grid_degrees, set(forecast["point"]))
+    places = unit_places(config)
+    places = places[places["unit"].isin(set(units["unit"]))]
+    points, forecast = weather.area_weather(places, weather_spots(config, units), _read_input(config, "weather"), config.weather.area_degrees)
     return Inputs(
         market=_read_input(config, "market"),
         constraints=_read_input(config, "constraints", tuple(config.constraint_indicators)),
