@@ -28,7 +28,6 @@ class Paths:
     hourly_redispatch_dir: Path | None = None
     hourly_market: Path | None = None
     hourly_constraints: Path | None = None
-    hourly_weather: Path | None = None
 
 
 @dataclass(frozen=True)

@@ -9,7 +9,7 @@ import pandas as pd
 from . import estimator, i90, ledger, locations, metrics, weather
 from .config import Config
 from .features import CATEGORICAL, KEY, build_dataset, feature_columns
-from .timeseries import hours_to_quarters
+from .timeseries import hours_to_rows
 
 DIRECTION_NAMES = {"Bajar": "down", "Subir": "up"}
 WEATHER_TECHNOLOGIES = ("wind", "solar_pv", "solar_thermal", "hybrid")
@@ -25,6 +25,7 @@ class Inputs:
     redispatch: pd.DataFrame
     label_days: set
     coverage: float
+    hourly: Inputs | None = None
 
 
 def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -36,13 +37,9 @@ def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> p
     return frame[keep].reset_index(drop=True)
 
 
-def _read_input(config: Config, name: str, energy: tuple[str, ...] = ()) -> pd.DataFrame:
-    """Read one quarter-hour input, preceded by its hourly file split into quarters when hourly_start is set."""
-    frame = _read_table(config.resolve(getattr(config.paths, name)), config.start)
-    if config.hourly_start is None:
-        return frame
-    hourly = _read_table(config.resolve(getattr(config.paths, f"hourly_{name}")), config.hourly_start, config.start)
-    return pd.concat([hours_to_quarters(hourly, energy), frame], ignore_index=True)
+def _read_input(config: Config, name: str) -> pd.DataFrame:
+    """Read one quarter-hour input from the first 15-minute day."""
+    return _read_table(config.resolve(getattr(config.paths, name)), config.start)
 
 
 def _read_redispatch(config: Config, folder, start: pd.Timestamp, end: pd.Timestamp | None = None):
@@ -114,13 +111,32 @@ def select_units(config: Config) -> pd.DataFrame:
 def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
     """Read the config direction's per-unit redispatch per quarter-hour, with unit aliases applied, and the days covered."""
     redispatch, days = _read_redispatch(config, config.paths.redispatch_dir, config.start)
-    if config.hourly_start is not None:
-        early, early_days = _read_redispatch(config, config.paths.hourly_redispatch_dir, config.hourly_start, config.start)
-        redispatch = pd.concat([hours_to_quarters(early, ("mwh",)), redispatch], ignore_index=True)
-        days = early_days + days
+    return _per_unit(config, redispatch, "period"), days
+
+
+def _per_unit(config: Config, redispatch: pd.DataFrame, period: str) -> pd.DataFrame:
+    """Apply unit aliases and add up each unit's redispatch per period."""
     redispatch = redispatch.copy()
     redispatch["unit"] = redispatch["unit"].replace(locations.load_aliases(config.resolve(config.paths.unit_aliases)))
-    return redispatch.groupby(KEY, as_index=False)["mwh"].sum(), days
+    return redispatch.groupby(["delivery_date", period, "unit"], as_index=False)["mwh"].sum()
+
+
+def load_hourly(config: Config, units: pd.DataFrame, points: pd.DataFrame, area: pd.DataFrame) -> Inputs:
+    """Read the hourly files from hourly_start up to start as one row per hour, labelled by the hour's redispatch."""
+    def read(name: str, energy: tuple[str, ...] = ()) -> pd.DataFrame:
+        return hours_to_rows(_read_table(config.resolve(getattr(config.paths, f"hourly_{name}")), config.hourly_start, config.start), energy)
+
+    redispatch, days = _read_redispatch(config, config.paths.hourly_redispatch_dir, config.hourly_start, config.start)
+    return Inputs(
+        market=read("market"),
+        constraints=read("constraints", tuple(config.constraint_indicators)),
+        units=units,
+        weather=weather.hour_means(area),
+        points=points,
+        redispatch=hours_to_rows(_per_unit(config, redispatch, "hour")),
+        label_days=set(days),
+        coverage=float("nan"),
+    )
 
 
 def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
@@ -132,16 +148,19 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
     covered = redispatch.loc[redispatch["unit"].isin(set(units["unit"])), "mwh"].sum() / total if total else float("nan")
     places = unit_places(config)
     places = places[places["unit"].isin(set(units["unit"]))]
-    points, forecast = weather.area_weather(places, weather_spots(config, units), _read_input(config, "weather"), config.weather.area_degrees)
+    spots = _read_table(config.resolve(config.paths.weather), config.hourly_start or config.start)
+    points, area = weather.area_weather(places, weather_spots(config, units), spots, config.weather.area_degrees)
+    late = area["delivery_date"] >= config.start
     return Inputs(
         market=_read_input(config, "market"),
-        constraints=_read_input(config, "constraints", tuple(config.constraint_indicators)),
+        constraints=_read_input(config, "constraints"),
         units=units,
-        weather=forecast,
+        weather=area[late].reset_index(drop=True),
         points=points,
         redispatch=redispatch,
         label_days=set(days),
         coverage=covered,
+        hourly=load_hourly(config, units, points, area[~late]) if config.hourly_start is not None else None,
     )
 
 
@@ -161,14 +180,18 @@ def build(config: Config, inputs: Inputs, label_end, dates=None) -> pd.DataFrame
 
 
 def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> pd.DataFrame:
-    """Build only the labelled rows, sampling negatives before the holdout days as each month is built."""
+    """Build only the labelled rows, sampling negatives before the holdout days as each month is built; hourly rows come first."""
     last = max(day for day in inputs.label_days if day <= label_end)
     cutoff = last - pd.Timedelta(days=config.model.test_days)
     sample = (config.model.negative_fraction, config.model.random_state, cutoff)
-    return build_dataset(
-        config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
-        inputs.redispatch, inputs.label_days, label_end, sample=sample,
-    )
+    parts = []
+    for part, hourly in ((inputs.hourly, True), (inputs, False)):
+        if part is not None:
+            parts.append(build_dataset(
+                config, part.market, part.constraints, part.units, part.weather, part.points,
+                part.redispatch, part.label_days, label_end, sample=sample, hourly=hourly,
+            ))
+    return pd.concat(parts, ignore_index=True) if len(parts) > 1 else parts[0]
 
 
 def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, dict, pd.DataFrame | None]:

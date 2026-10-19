@@ -37,7 +37,7 @@ def feature_columns(config: Config) -> list[str]:
     auctions = (1, 2, 3) if config.features.use_ida3 else (1, 2)
     return (
         UNIT_COLUMNS
-        + ["quarter_hour", "day_of_week", "month", "is_weekend", "day_ahead_price"]
+        + ["quarter_hour", "day_of_week", "month", "is_weekend", "is_hourly", "day_ahead_price"]
         + [f"intraday{k}_price" for k in auctions]
         + [f"intraday{k}_minus_day_ahead_price" for k in auctions]
         + ["demand_forecast_mw", "wind_generation_forecast_mw", "solar_generation_forecast_mw", "demand_minus_wind_solar_mw"]
@@ -90,8 +90,9 @@ def build_dataset(
     label_end: pd.Timestamp | None,
     dates: list[pd.Timestamp] | None = None,
     sample: tuple[float, int, pd.Timestamp] | None = None,
+    hourly: bool = False,
 ) -> pd.DataFrame:
-    """Join national inputs, unit descriptors and weather to every unit with the target, one month at a time."""
+    """Join national inputs, unit descriptors and weather to every unit with the target, one month at a time; hourly marks rows that each stand for a whole hour."""
     national = market.merge(constraints, on=MARKET_KEY, how="left")
     national["delivery_date"] = pd.to_datetime(national["delivery_date"]).dt.normalize()
     national = national.rename(columns={**SOURCE_NAMES, **{name: spain_redispatch_name(name) for name in config.constraint_indicators}})
@@ -117,6 +118,7 @@ def build_dataset(
         frame["day_of_week"] = frame["delivery_date"].dt.weekday.astype("int8")
         frame["month"] = frame["delivery_date"].dt.month.astype("int8")
         frame["is_weekend"] = (frame["day_of_week"] >= 5).astype("int8")
+        frame["is_hourly"] = np.int8(hourly)
         frame = add_weather(frame, weather[weather["delivery_date"].isin(month["delivery_date"].unique())], points)
         frame = frame.merge(labels, on=KEY, how="left")
         target = frame["redispatched"] if label_end is not None else pd.Series(np.nan, index=frame.index)

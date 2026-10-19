@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 MARKET_KEY = ["delivery_date", "period"]
@@ -13,14 +12,13 @@ def add_period(frame: pd.DataFrame, stamps: pd.Series) -> pd.DataFrame:
     return frame
 
 
-def hours_to_quarters(frame: pd.DataFrame, energy: tuple[str, ...] = ()) -> pd.DataFrame:
-    """Repeat each hourly row over its four quarter-hours, splitting energy columns evenly."""
-    quarters = frame.iloc[np.repeat(np.arange(len(frame)), 4)].reset_index(drop=True)
-    quarters["hour"] = quarters["hour"] * 4 + np.tile(np.arange(4), len(frame))
-    quarters = quarters.rename(columns={"hour": "period"})
+def hours_to_rows(frame: pd.DataFrame, energy: tuple[str, ...] = ()) -> pd.DataFrame:
+    """Keep each hourly row once, at the middle quarter of its hour, with energy columns as per-quarter averages."""
+    rows = frame.rename(columns={"hour": "period"})
+    rows["period"] = rows["period"] * 4 + 2
     for column in energy:
-        quarters[column] = quarters[column] / 4
-    return quarters
+        rows[column] = rows[column] / 4
+    return rows
 
 
 def quarter_mean(series: pd.Series, column: str, end: pd.Timestamp) -> pd.DataFrame:

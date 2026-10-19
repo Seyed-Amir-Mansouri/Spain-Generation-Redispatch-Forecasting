@@ -48,6 +48,12 @@ def area_weather(places: pd.DataFrame, spots: pd.DataFrame, forecast: pd.DataFra
     return points.reset_index(drop=True), averaged
 
 
+def hour_means(frame: pd.DataFrame) -> pd.DataFrame:
+    """Average quarter-hour forecasts over each hour, placed at the middle quarter of the hour."""
+    hours = frame.assign(period=frame["period"] // 4 * 4 + 2)
+    return hours.groupby(KEY, as_index=False)[list(VARIABLES)].mean()
+
+
 def request_weight(points: int, first: pd.Timestamp, last: pd.Timestamp) -> int:
     """Count the Open-Meteo calls a request uses: one per point and started two weeks of days."""
     return points * math.ceil((last - first).days / 14)

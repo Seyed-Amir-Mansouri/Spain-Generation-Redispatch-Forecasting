@@ -7,7 +7,7 @@ import pandas as pd
 from congestion_es import estimator, ledger, locations, metrics, pipeline, validate, weather
 from congestion_es.config import DEFAULT_CONFIG, load_config
 from congestion_es.features import feature_columns
-from congestion_es.timeseries import hours_to_quarters
+from congestion_es.timeseries import hours_to_rows
 
 UNITS = ["EOLA", "FVB", "CCGC"]
 
@@ -111,12 +111,23 @@ def test_training_build_samples_negatives_but_keeps_holdout_whole(config):
     assert report["holdout"]["n"] == late.sum() == len(holdout)
 
 
-def test_hours_to_quarters_repeats_rows_and_splits_energy():
+def test_hours_to_rows_keeps_one_row_per_hour_at_its_middle_quarter():
     hourly = pd.DataFrame({"delivery_date": pd.Timestamp("2025-06-01"), "hour": [0, 23], "price": [50.0, 70.0], "mwh": [8.0, 4.0]})
-    quarters = hours_to_quarters(hourly, ("mwh",))
-    assert quarters["period"].tolist() == [0, 1, 2, 3, 92, 93, 94, 95]
-    assert quarters["price"].tolist() == [50.0] * 4 + [70.0] * 4
-    assert quarters["mwh"].tolist() == [2.0] * 4 + [1.0] * 4
+    rows = hours_to_rows(hourly, ("mwh",))
+    assert rows["period"].tolist() == [2, 94]
+    assert rows["price"].tolist() == [50.0, 70.0]
+    assert rows["mwh"].tolist() == [2.0, 1.0]
+
+
+def test_hourly_rows_are_marked_and_come_before_the_quarter_hours(config):
+    inputs = _inputs(config, days=40)
+    middle = lambda frame: frame[frame["period"] % 4 == 2]
+    early = dataclasses.replace(inputs, market=middle(inputs.market), constraints=middle(inputs.constraints), weather=middle(inputs.weather))
+    dataset = pipeline.build_training(config, dataclasses.replace(inputs, hourly=early), pd.Timestamp("2025-06-25"))
+    marked = dataset[dataset["is_hourly"] == 1]
+    assert len(marked) and (marked["period"] % 4 == 2).all()
+    assert dataset["is_hourly"].iloc[0] == 1 and dataset["is_hourly"].iloc[-1] == 0
+    assert "is_hourly" in feature_columns(config)
 
 
 def test_target_mwh_is_the_attributed_energy_on_labelled_rows(config):
