@@ -12,15 +12,6 @@ def add_period(frame: pd.DataFrame, stamps: pd.Series) -> pd.DataFrame:
     return frame
 
 
-def hours_to_rows(frame: pd.DataFrame, energy: tuple[str, ...] = ()) -> pd.DataFrame:
-    """Keep each hourly row once, at the middle quarter of its hour, with energy columns as per-quarter averages."""
-    rows = frame.rename(columns={"hour": "period"})
-    rows["period"] = rows["period"] * 4 + 2
-    for column in energy:
-        rows[column] = rows[column] / 4
-    return rows
-
-
 def quarter_mean(series: pd.Series, column: str, end: pd.Timestamp) -> pd.DataFrame:
     """Resample a tz-aware series to local quarter-hour means, excluding the end boundary."""
     series = series[series.index < end]
