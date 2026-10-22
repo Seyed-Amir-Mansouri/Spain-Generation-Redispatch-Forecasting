@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from . import estimator, i90, ledger, locations, metrics, weather
+from . import estimator, generation, i90, ledger, locations, metrics, weather
 from .config import Config
 from .features import CATEGORICAL, KEY, build_dataset, feature_columns
 
@@ -24,6 +24,8 @@ class Inputs:
     redispatch: pd.DataFrame
     label_days: set
     coverage: float
+    unit_quarters: pd.DataFrame | None = None
+    unit_days: pd.DataFrame | None = None
 
 
 def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -82,6 +84,32 @@ def located_units(config: Config, names: set[str]) -> set[str]:
     return names & set(sure[sure].index)
 
 
+def listed_units(config: Config, names: set[str]) -> set[str]:
+    """Keep the units in the configured unit list, or all units when the list is off."""
+    if not config.units.use_list:
+        return names
+    return names & set(pd.read_csv(config.resolve(config.paths.unit_list))["unit"])
+
+
+def plants(config: Config, units: pd.DataFrame) -> pd.Series:
+    """Name each unit's plant: its technology and its place rounded to plant_degrees."""
+    places = unit_places(config).set_index("unit").reindex(units["unit"])
+    digits = max(0, -int(np.floor(np.log10(config.generation.plant_degrees))))
+    technology = units.set_index("unit")["technology_id"]
+    return pd.Series(
+        [f"{lat:.{digits}f},{lon:.{digits}f},{technology[unit]}" for unit, lat, lon in zip(places.index, places["lat"], places["lon"])],
+        index=places.index,
+    )
+
+
+def unit_generation(config: Config, units: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read the units' ENTSO-E actual output and make the per-quarter and per-day inputs from it."""
+    programming, _ = locations.load_registry(config.resolve(config.paths.registry_dir))
+    eic_units = dict(zip(programming["eic"], programming["code"]))
+    output = generation.load(config.resolve(config.paths.generation_dir), eic_units, set(units["unit"]), config.start - pd.Timedelta(days=2))
+    return generation.unit_inputs(output, plants(config, units), config.generation.known_until_period)
+
+
 def unit_technology(config: Config, units: pd.Series) -> pd.Series:
     """Return each programming unit's grouped production type from REE's registry."""
     programming, _ = locations.load_registry(config.resolve(config.paths.registry_dir))
@@ -103,7 +131,7 @@ def select_units(config: Config) -> pd.DataFrame:
     for direction in config.labels.directions:
         redispatch, days = load_redispatch(config.for_direction(direction))
         names |= frequent_units(config, redispatch, days)
-    return describe_units(config, located_units(config, names))
+    return describe_units(config, listed_units(config, located_units(config, names)))
 
 
 def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
@@ -115,7 +143,7 @@ def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
 
 
 def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
-    """Read market, constraint, weather and per-unit redispatch files, and pick the units to predict."""
+    """Read market, constraint, weather, per-unit output and per-unit redispatch files, and pick the units to predict."""
     redispatch, days = load_redispatch(config)
     if units is None:
         units = select_units(config)
@@ -124,6 +152,7 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
     places = unit_places(config)
     places = places[places["unit"].isin(set(units["unit"]))]
     points, area = weather.area_weather(places, weather_spots(config, units), _read_input(config, "weather"), config.weather.area_degrees)
+    unit_quarters, unit_days = unit_generation(config, units)
     return Inputs(
         market=_read_input(config, "market"),
         constraints=_read_input(config, "constraints"),
@@ -133,6 +162,8 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
         redispatch=redispatch,
         label_days=set(days),
         coverage=covered,
+        unit_quarters=unit_quarters,
+        unit_days=unit_days,
     )
 
 
@@ -148,6 +179,7 @@ def build(config: Config, inputs: Inputs, label_end, dates=None) -> pd.DataFrame
     return build_dataset(
         config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
         inputs.redispatch, inputs.label_days, label_end, dates,
+        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days,
     )
 
 
@@ -159,6 +191,7 @@ def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> p
     return build_dataset(
         config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
         inputs.redispatch, inputs.label_days, label_end, sample=sample,
+        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days,
     )
 
 

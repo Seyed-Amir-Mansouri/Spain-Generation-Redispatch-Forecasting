@@ -180,6 +180,7 @@ def load_registry(folder: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     programming = _registry_frame(folder / "programming_units.json").rename(columns={
         "Código de UP": "code", "Descripción larga": "name", "Tipo de producción": "technology",
         "Tipo de UP": "unit_type", "Sujeto del Mercado": "participant", "Potencia máxima MW": "max_mw",
+        "Código EIC": "eic",
     })
     physical = _registry_frame(folder / "physical_units.json").rename(columns={
         "Código de UF": "code", "Descripción corta": "short_name", "Descripción larga": "long_name",

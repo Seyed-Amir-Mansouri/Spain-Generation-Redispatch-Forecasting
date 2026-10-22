@@ -9,7 +9,7 @@ The restriction codes that count are set per direction in `[labels.restriction_t
 
 ## Why it is useful
 
-REE publishes this redispatch per unit only 90 days after delivery. The estimator answers the same question from signals that are public on the delivery day itself: day-ahead and intraday auction prices, national and regional forecasts, and REE's national constraint totals.
+REE publishes this redispatch per unit only 90 days after delivery. The estimator answers the same question from signals that are public on the delivery day itself: day-ahead and intraday auction prices, national and regional forecasts, REE's national constraint totals, and each unit's own recent output from ENTSO-E.
 
 A prediction is meant to be issued once the third intraday auction (IDA3) has cleared on the delivery day. Set `use_ida3 = false` in `config.toml` to issue earlier, after IDA2 on the day before.
 
@@ -47,7 +47,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - `high`: an exact or hand-checked match
      - `medium`: any other plant match
      - `low`: placed at a municipality or substation
-3. **Units.** Predictions are made per REE programming unit, the units named in the I90 files. A unit is kept when it was redispatched by at least `min_mwh` in at least `min_events` (50) quarter-hours before the held-out days, in either direction. That gives 625 units. With `location_confidence = "high"`, only units whose physical units were all located by exact name or by hand are kept, so that their weather is right: 193 units (104 solar, 44 wind, 27 combined cycle, 9 solar thermal and 9 others), spread over Spain but mostly in the south and centre. Both directions predict for the same units. Each unit has two fixed descriptors, both categorical inputs:
+3. **Units.** Predictions are made per REE programming unit, the units named in the I90 files. A unit is kept when it was redispatched by at least `min_mwh` in at least `min_events` (50) quarter-hours before the held-out days, in either direction. That gives 625 units. With `location_confidence = "high"`, only units whose physical units were all located by exact name or by hand are kept, so that their weather is right: 193 units. With `use_list = true`, only the units in `reference/entsoe_units.csv` are kept: the 41 of those 193 whose actual output ENTSO-E publishes per unit (26 combined cycle, 11 solar PV, 2 nuclear, 1 pumped hydro, 1 coal). Spain reports units of 100 MW and above, so almost every gas plant is covered but few solar and no wind farms. Both directions predict for the same units. Each unit has two fixed descriptors, both categorical inputs:
    - `unit_id`, a number per unit;
    - `technology_id`, its production type from REE's programming-unit registry, grouped into solar PV, wind, combined cycle, cogeneration, solar thermal, hybrid, hydro, pumped hydro, nuclear, coal and oil, gas, biomass and waste, other, and unknown for the 28 units the registry does not list.
 4. **Labels.** Each direction in `directions` gets its own labels: a unit and 15-minute period counts as redispatched in that direction when its energy there reaches `min_mwh` (1.25 MWh, the same rate as 5 MWh per hour). No unit has ever been moved up and down in the same quarter-hour. Days with no downloaded file are left unknown instead of being counted as zero.
@@ -61,20 +61,24 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - **Areas.** Spain is cut into 2° squares (`area_degrees`). Each unit gets the average over the spots in its square, whatever its own technology, because congestion follows how much a whole area's wind and solar plants produce. Units that could not be located, or whose square has no spot, have no weather.
      - **Why areas.** On the 193 units with hand-checked locations, area weather gave 2% fewer wrong calls than no weather, while weather from the 1° square holding the unit, or at the unit's own spot, gave none.
      - **Sources.** History comes from Open-Meteo's archive of past forecasts, and the last seven days from its live forecast service. Requests are spaced so the weighted calls stay under `calls_per_hour`.
-   - **Not used as inputs.** Plant capacity and location are not model inputs; locations only pick each unit's area. Past redispatch is not an input either, because it arrives 90 days late.
+   - **Unit output.** `fetch-generation` downloads ENTSO-E's actual generation per unit (every 15 minutes, published within hours), one file per day in `data/raw/entsoe_units/`. Output already includes REE's redispatch, so a delivery day only gets what is out before a day-ahead prediction at noon: the whole day two days before, and the day before up to `known_until_period` (quarter 48, noon).
+     - **Own output.** The unit's output at the same quarter two days before, its mean over that day, its mean on the day before until noon, and its mean in the last hour before noon.
+     - **Sister units.** Units of one technology within `plant_degrees` (0.1°) form a plant, for example SAGU1–3 or PALOS1–3. REE often moves one sister instead of another, so the unit also gets the plant's output at the same quarter two days before, its share of the plant's output and its rank in the plant that day, and the plant's and the sisters' output on the day before until noon.
+     - **Codes.** ENTSO-E names units by their EIC code, which REE's registry gives for each programming unit. From late December 2025 ENTSO-E sends only the plant's code; `reference/entsoe_plants.csv` maps plant codes to programming units. The 25-hour day of the October clock change is fetched in two halves, because a query takes at most 24 hours.
+   - **Not used as inputs.** Plant capacity and location are not model inputs; locations only pick each unit's area and plant. Past redispatch is not an input either, because it arrives 90 days late. ENTSO-E's planned outage notices were tested and did not help: few outages are announced before noon on the day before.
 6. **Training and prediction.**
    - **Two yes/no models.** Each direction has its own LightGBM classifier for the probability that the unit is redispatched that way in the quarter-hour. Their settings are in `[model]`, with the downward model's own values in `[model.Bajar]` (more trees and stronger smoothing of the unit categories, chosen by tuning on the held-out days).
    - **Up, down or nothing.** A unit-quarter is called `down` or `up` when that model's probability is the higher of the two and reaches `threshold` (0.5), and `nothing` otherwise. Both models being sure at once does not happen in practice: on the held-out days the lower of the two probabilities never exceeded 0.2.
    - **Training.** `train` picks the units, then fits both directions, or one with `--direction`. The last `test_days` are held out for scoring before the final refit. To save memory, the training table is built month by month and keeps every redispatched row but only a `negative_fraction` share of the others before the held-out days. The kept rows are weighted by 1/`negative_fraction`. The held-out days are scored on all their rows. Because the units REE picks change as the grid changes, each training row's weight is also halved for every `recency_half_life_days` (60) it lies before the last training day; 0 turns this off.
    - **Report.** Each direction's held-out probability is scored (Brier skill, AUC, precision, recall). When both directions are trained together, the up/down/nothing calls on the held-out days are counted per unit-quarter: right, missed, wrong direction and false alarms for each direction, and per quarter-hour how often a direction happened, was called, and had at least one unit right.
-   - **Results.** Trained on 1 October 2025 – 18 May 2026 and tested on the 60 held-out days (19 May – 17 July 2026; 5,760 quarter-hours × 193 units = 1.1 million unit-quarters), 91.0% of calls were right, against 84.7% for always saying `nothing`. Every input is available each day before delivery; past redispatch is used only as the target. Missed counts moves called the wrong way (30 downs called up); not real counts calls of a move that did not happen:
+   - **Results.** Trained on 1 October 2025 – 18 May 2026 and tested on the 60 held-out days (19 May – 17 July 2026; 5,760 quarter-hours × 41 units = 236,160 unit-quarters). Every input is available each day before delivery; past redispatch is used only as the target. Missed counts moves called the wrong way; not real counts calls of a move that did not happen. Seed 42:
 
      | | Happened | Spotted | Correct | Wrong | Missed | Not real |
      | --- | --- | --- | --- | --- | --- | --- |
-     | Down | 115,393 | 114,841 | 85,374 (74%) | 59,486 | 30,019 | 29,467 |
-     | Up | 54,788 | 52,049 | 33,190 (61%) | 40,457 | 21,598 | 18,859 |
+     | Down | 5,549 | 6,508 | 4,594 (83%) | 2,869 | 955 | 1,914 |
+     | Up | 54,280 | 55,148 | 39,089 (72%) | 31,250 | 15,191 | 16,059 |
 
-     74% of `down` calls and 64% of `up` calls were right. Per quarter-hour, downward redispatch happened in 3,309 and was called in 2,781, with 564 missed and 36 false alarms; at least one called unit was right in 2,636. Upward redispatch happened in every quarter-hour, and at least one called unit was right in 5,727. Without weather the same units give about 1,800 more wrong calls; with weather from the 1° square holding each unit, about 3,700 more. Changing only the random seed moves the total of wrong calls by up to about 1,400.
+     Almost all upward redispatch in the test days (54,280 of 54,788 unit-quarters among the 193 units) falls on these 41 units, mostly gas plants. Over three seeds the wrong calls were 33,877 on average, against 42,980 without the unit-output and sister inputs (−21%): the unit's own output gave −19% and the sisters a further −2%. Changing only the random seed moves the total of wrong calls by up to about 1,000.
    - **Prediction.** `predict` runs both models and writes every unit and 15-minute period to the ledger with the two probabilities and the call, and prints the units with the most up or down quarter-hours.
    - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` counts the logged calls the same way, overall and over the last `window_days`, and scores each direction's probability.
 
@@ -88,6 +92,8 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
 | Spain forecasts (ENTSO-E) | `demand_forecast_mw`, `wind_generation_forecast_mw`, `solar_generation_forecast_mw`, `demand_minus_wind_solar_mw` |
 | Spain's Phase I redispatch (REE, published the day before) | `spain_redispatch_down_overload_normal_mwh`, `_down_overload_contingency_`, `_down_distribution_`, `_down_voltage_`, `_down_other_`, `_down_total_`, and the same for `up`, plus `spain_redispatch_up_security_mwh` |
 | Weather of the unit's area (Open-Meteo) | `area_wind_speed_kmh` (at 100 m), `area_solar_radiation_wm2`, `area_cloud_cover_pct` |
+| Unit's recent output (ENTSO-E) | `unit_gen_2d_mw`, `unit_gen_2d_day_mw`, `unit_gen_1d_morning_mw`, `unit_gen_1d_noon_mw` |
+| Sister units at the same plant (ENTSO-E) | `plant_gen_2d_mw`, `unit_share_2d`, `unit_rank_2d`, `plant_gen_1d_morning_mw`, `sisters_gen_1d_morning_mw` |
 
 The source files keep their original column names (`da_price`, `load_forecast_mw`, the indicator keys in `[constraint_indicators]`, Open-Meteo's variable names); `features.SOURCE_NAMES` and `spain_redispatch_name` give the model names.
 
@@ -99,6 +105,8 @@ pyproject.toml
 config.toml                     paths, unit selection, label rule, indicators, model settings
 reference/manual_locations.csv  hand-checked plant locations
 reference/unit_aliases.csv      retired REE unit codes and their replacements
+reference/entsoe_units.csv      the 41 units predicted, whose output ENTSO-E publishes
+reference/entsoe_plants.csv     ENTSO-E plant codes and their programming units
 congestion_es/
     config.py       loads config.toml into typed objects
     esios.py        throttled client for REE's e-sios API
@@ -107,6 +115,7 @@ congestion_es/
     market.py       ENTSO-E prices and forecasts, REE's national constraint totals, merging into quarter-hour files
     omie.py         Spanish IDA1-3 prices from OMIE's daily files
     weather.py      Open-Meteo forecasts at wind and solar spots, averaged over areas
+    generation.py   ENTSO-E actual output per unit, and the unit and sister inputs made from it
     features.py     model inputs with readable names, and the target
     pipeline.py     picks units, loads inputs, builds datasets, trains and issues up/down/nothing calls
     validate.py     scores the prediction ledger against published redispatch
@@ -145,15 +154,16 @@ congestion-es fetch-market --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-intraday --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-constraints --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-weather --start 2025-10-01 --end 2026-10-16
+congestion-es fetch-generation --start 2025-09-29 --end 2026-10-22
 congestion-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
 congestion-es train                           # both directions; --direction Subir for one
 congestion-es predict --date 2026-10-15       # needs both directions' models
 congestion-es validate
 ```
 
-To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constraints` and `fetch-weather` for that day, then `predict`.
+To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constraints` and `fetch-weather` for that day and `fetch-generation` for the two days before it, then `predict`.
 
-`--end` is the day after the last delivery date. `fetch-redispatch` skips days already on disk. The other fetch commands merge new values into the existing files column by column. Requests to e-sios are spaced by `request_interval_seconds`, because REE temporarily blocks clients that send rapid or repeated requests.
+`--end` is the day after the last delivery date. `fetch-redispatch` and `fetch-generation` skip days already on disk. The other fetch commands merge new values into the existing files column by column. Requests to e-sios are spaced by `request_interval_seconds`, because REE temporarily blocks clients that send rapid or repeated requests.
 
 ## Limitations
 
@@ -166,6 +176,8 @@ To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constra
 - **Current fleet only.** The registries and plant lists describe the fleet as it is today, so plants that closed during the training period cannot be located.
 - **Late labels.** Per-unit labels arrive 90 days late, so predictions can only be scored per unit three months after delivery.
 - **Weather history.** Open-Meteo's archive stitches together the first hours of successive forecast runs, so historical weather is slightly more accurate than a forecast issued the day before would have been.
+- **Few units.** Only units whose output ENTSO-E publishes are predicted: 41 units, almost all of the upward redispatch but little of the downward, which falls mostly on solar and wind farms below 100 MW.
+- **Missing output.** On a few days ENTSO-E published almost no per-unit output (6 October 2025; 1, 12 and 29 June 2026); those days have no output inputs.
 - **Missing IDA1 prices.** On some days OMIE published an empty IDA1 file. Those periods carry no IDA1 price, which the model handles as missing.
 - **Data period.** Inputs and labels start on 1 October 2025, when the Spanish day-ahead market moved to 15-minute periods (`[data] start` in `config.toml`), and only 15-minute data is used. Earlier hourly data (May–September 2025) was tested, as one row per hour and as hours copied into four quarters; neither lowered the wrong calls, so it is not used.
 - **No summer in training.** The held-out days are in May–July, but the 15-minute training days run from October to May.

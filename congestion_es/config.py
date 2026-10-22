@@ -19,9 +19,12 @@ class Paths:
     market: Path
     constraints: Path
     weather: Path
+    generation_dir: Path
     unit_locations: Path
     manual_locations: Path
     unit_aliases: Path
+    unit_list: Path
+    generation_plants: Path
     model_dir: Path
     predictions: Path
     validation: Path
@@ -31,6 +34,14 @@ class Paths:
 class Units:
     min_events: int
     location_confidence: str = ""
+    use_list: bool = False
+
+
+@dataclass(frozen=True)
+class Generation:
+    request_interval_seconds: float
+    known_until_period: int
+    plant_degrees: float
 
 
 @dataclass(frozen=True)
@@ -71,6 +82,7 @@ class Config:
     request_interval_seconds: float
     units: Units
     weather: Weather
+    generation: Generation
     labels: Labels
     features: Features
     constraint_indicators: dict[str, int]
@@ -106,6 +118,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         request_interval_seconds=float(raw["esios"]["request_interval_seconds"]),
         units=Units(**raw["units"]),
         weather=Weather(**raw["weather"]),
+        generation=Generation(**raw["generation"]),
         labels=Labels(
             directions=tuple(labels["directions"]),
             codes={direction: tuple(codes) for direction, codes in labels["restriction_types"].items()},

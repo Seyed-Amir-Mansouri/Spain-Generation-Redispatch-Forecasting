@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
+from .generation import COLUMNS as GENERATION_COLUMNS
 from .timeseries import MARKET_KEY
 
 KEY = MARKET_KEY + ["unit"]
@@ -43,6 +44,7 @@ def feature_columns(config: Config) -> list[str]:
         + ["demand_forecast_mw", "wind_generation_forecast_mw", "solar_generation_forecast_mw", "demand_minus_wind_solar_mw"]
         + [spain_redispatch_name(name) for name in config.constraint_indicators]
         + WEATHER_COLUMNS
+        + GENERATION_COLUMNS
     )
 
 
@@ -50,6 +52,18 @@ def add_weather(frame: pd.DataFrame, weather: pd.DataFrame, points: pd.DataFrame
     """Attach the weather forecast of each unit's area."""
     weather = weather.merge(points, on="point", how="inner").drop(columns="point").rename(columns=SOURCE_NAMES)
     return frame.merge(weather, on=KEY, how="left")
+
+
+def add_generation(frame: pd.DataFrame, unit_quarters: pd.DataFrame | None, unit_days: pd.DataFrame | None) -> pd.DataFrame:
+    """Attach each unit's recent ENTSO-E output; units and days without it stay empty."""
+    days = frame["delivery_date"].unique()
+    if unit_quarters is not None:
+        frame = frame.merge(unit_quarters[unit_quarters["delivery_date"].isin(days)], on=KEY, how="left")
+    if unit_days is not None:
+        frame = frame.merge(unit_days[unit_days["delivery_date"].isin(days)], on=["delivery_date", "unit"], how="left")
+    missing = [column for column in GENERATION_COLUMNS if column not in frame]
+    frame[missing] = np.nan
+    return frame
 
 
 def label_rows(keys: pd.DataFrame, redispatch: pd.DataFrame, label_days: set, min_mwh: float) -> pd.Series:
@@ -88,8 +102,10 @@ def build_dataset(
     label_end: pd.Timestamp | None,
     dates: list[pd.Timestamp] | None = None,
     sample: tuple[float, int, pd.Timestamp] | None = None,
+    unit_quarters: pd.DataFrame | None = None,
+    unit_days: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Join national inputs, unit descriptors and weather to every unit with the target, one month at a time."""
+    """Join national inputs, unit descriptors, weather and each unit's recent output to every unit with the target, one month at a time."""
     national = market.merge(constraints, on=MARKET_KEY, how="left")
     national["delivery_date"] = pd.to_datetime(national["delivery_date"]).dt.normalize()
     national = national.rename(columns={**SOURCE_NAMES, **{name: spain_redispatch_name(name) for name in config.constraint_indicators}})
@@ -116,6 +132,7 @@ def build_dataset(
         frame["month"] = frame["delivery_date"].dt.month.astype("int8")
         frame["is_weekend"] = (frame["day_of_week"] >= 5).astype("int8")
         frame = add_weather(frame, weather[weather["delivery_date"].isin(month["delivery_date"].unique())], points)
+        frame = add_generation(frame, unit_quarters, unit_days)
         frame = frame.merge(labels, on=KEY, how="left")
         target = frame["redispatched"] if label_end is not None else pd.Series(np.nan, index=frame.index)
         frame["target"] = target.where(frame["delivery_date"] <= label_end) if label_end is not None else target

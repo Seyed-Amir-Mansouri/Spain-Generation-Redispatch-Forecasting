@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import esios, estimator, i90, ledger, locations, market, metrics, omie, pipeline, validate, weather
+from . import esios, estimator, generation, i90, ledger, locations, market, metrics, omie, pipeline, validate, weather
 from .config import DEFAULT_CONFIG, Config, load_config
 
 
@@ -102,6 +102,18 @@ def cmd_fetch_constraints(args: argparse.Namespace) -> None:
     print(f"constraints: {len(totals)} new rows, {len(frame)} total")
 
 
+def cmd_fetch_generation(args: argparse.Namespace) -> None:
+    """Download ENTSO-E actual output per unit, one file per delivery day, skipping cached days."""
+    config = load_config(args.config)
+    plants = pd.read_csv(config.resolve(config.paths.generation_plants))
+    days = pd.date_range(_date(args.start), _date(args.end) - pd.Timedelta(days=1), freq="D")
+    stats = generation.fetch(
+        generation.build_client(_key("ENTSOE_API_KEY")), days, config.resolve(config.paths.generation_dir),
+        dict(zip(plants["plant_eic"], plants["eic"])), config.generation.request_interval_seconds,
+    )
+    print(json.dumps(stats))
+
+
 def cmd_fetch_redispatch(args: argparse.Namespace) -> None:
     """Download per-unit redispatch (I90DIA) for each day in a range, skipping cached days."""
     config = load_config(args.config)
@@ -192,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("fetch-intraday", cmd_fetch_intraday, "fetch OMIE IDA1-3 prices"),
         ("fetch-weather", cmd_fetch_weather, "fetch Open-Meteo weather at the wind and solar spots"),
         ("fetch-constraints", cmd_fetch_constraints, "fetch REE national constraint totals"),
+        ("fetch-generation", cmd_fetch_generation, "download ENTSO-E actual output per unit"),
         ("fetch-redispatch", cmd_fetch_redispatch, "download per-unit redispatch files (I90DIA)"),
     ):
         command = sub.add_parser(name, help=text)

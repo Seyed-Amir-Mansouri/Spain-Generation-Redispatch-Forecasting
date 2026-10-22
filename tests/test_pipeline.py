@@ -209,3 +209,12 @@ def test_located_units_keeps_units_whose_plants_are_all_located_with_the_wanted_
     assert pipeline.located_units(located, {"SURE", "MIXED", "NONE", "UNKNOWN"}) == {"SURE"}
     every = dataclasses.replace(located, units=dataclasses.replace(config.units, location_confidence=""))
     assert pipeline.located_units(every, {"SURE", "MIXED"}) == {"SURE", "MIXED"}
+
+
+def test_listed_units_keeps_only_the_units_in_the_list_when_it_is_on(config, tmp_path):
+    path = tmp_path / "units.csv"
+    pd.DataFrame({"unit": ["SAGU1", "PALOS2"]}).to_csv(path, index=False)
+    listed = dataclasses.replace(config, paths=dataclasses.replace(config.paths, unit_list=path))
+    assert pipeline.listed_units(listed, {"SAGU1", "EOLA"}) == {"SAGU1"}
+    off = dataclasses.replace(listed, units=dataclasses.replace(config.units, use_list=False))
+    assert pipeline.listed_units(off, {"SAGU1", "EOLA"}) == {"SAGU1", "EOLA"}
