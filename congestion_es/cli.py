@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -131,6 +132,8 @@ def _directions(config: Config, args: argparse.Namespace) -> list[Config]:
 def cmd_train(args: argparse.Namespace) -> None:
     """Pick the units, build each direction's dataset from history, save its model, and score the up/down/nothing calls."""
     base = load_config(args.config)
+    if args.test_days is not None:
+        base = dataclasses.replace(base, model=dataclasses.replace(base.model, test_days=args.test_days))
     units = pipeline.select_units(base)
     holdouts = {}
     for config in _directions(base, args):
@@ -214,6 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = sub.add_parser("train", help="train and save the models for each direction")
     train.add_argument("--direction", help="train only this direction, e.g. Bajar or Subir")
+    train.add_argument("--test-days", type=int, help="score the last N days with published redispatch before the final refit; default test_days in config, 0 for none")
     train.set_defaults(func=cmd_train)
 
     predict = sub.add_parser("predict", help="call each unit up, down or nothing for a delivery day")

@@ -218,3 +218,11 @@ def test_listed_units_keeps_only_the_units_in_the_list_when_it_is_on(config, tmp
     assert pipeline.listed_units(listed, {"SAGU1", "EOLA"}) == {"SAGU1"}
     off = dataclasses.replace(listed, units=dataclasses.replace(config.units, use_list=False))
     assert pipeline.listed_units(off, {"SAGU1", "EOLA"}) == {"SAGU1", "EOLA"}
+
+
+def test_train_takes_the_number_of_test_days_from_the_command_line():
+    from congestion_es import cli
+
+    args = cli.build_parser().parse_args(["train", "--test-days", "1"])
+    assert args.test_days == 1 and args.func is cli.cmd_train
+    assert cli.build_parser().parse_args(["train"]).test_days is None
