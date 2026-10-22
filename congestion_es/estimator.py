@@ -55,6 +55,12 @@ def _fit(settings: Settings, categorical: list[str], features: list[str], rows: 
     return _estimator(settings).fit(rows[features], rows["target"].astype(int), sample_weight=weights, categorical_feature=categorical or "auto")
 
 
+def fit(settings: Settings, categorical: list[str], features: list[str], rows: pd.DataFrame, end: pd.Timestamp):
+    """Fit one classifier on rows sampled by the dataset build, halving a row's weight for every half-life it lies before end."""
+    weights = rows["weight"].to_numpy() * _recency(rows["delivery_date"], end, settings.recency_half_life_days)
+    return _fit(settings, categorical, features, rows, weights)
+
+
 def _sample(frame: pd.DataFrame, fraction: float, seed: int) -> tuple[pd.DataFrame, np.ndarray]:
     """Keep every positive row and a random share of negatives, weighting the kept negatives back up."""
     if fraction >= 1:

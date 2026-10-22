@@ -9,7 +9,7 @@ The restriction codes that count are set per direction in `[labels.restriction_t
 
 ## Why it is useful
 
-REE publishes this redispatch per unit only 90 days after delivery. The estimator answers the same question from signals that are public on the delivery day itself: day-ahead and intraday auction prices, national and regional forecasts, REE's national constraint totals, and each unit's own recent output from ENTSO-E.
+REE publishes this redispatch per unit only 90 days after delivery. The estimator answers the same question from signals that are public on the delivery day itself: day-ahead and intraday auction prices, national and regional forecasts, REE's national constraint totals and day-ahead schedule per technology, and each unit's own recent output from ENTSO-E.
 
 A prediction is meant to be issued once the third intraday auction (IDA3) has cleared on the delivery day. Set `use_ida3 = false` in `config.toml` to issue earlier, after IDA2 on the day before.
 
@@ -56,6 +56,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      - `fetch-market` downloads day-ahead prices plus load, wind and solar forecasts from ENTSO-E.
      - `fetch-intraday` downloads the IDA1, IDA2 and IDA3 auction prices from OMIE's daily files. ENTSO-E has no Spanish intraday-auction prices before September 2025.
      - `fetch-constraints` downloads REE's national Phase I constraint energy by restriction type, which REE publishes on the day before delivery.
+     - `fetch-schedule` downloads REE's national day-ahead schedule (PBF) per technology: combined cycle, nuclear, wind, solar PV and thermal, hydro, pumped storage, cogeneration, and imports and exports with France and Portugal (`[schedule_indicators]`). It is the market's plan before REE's redispatch and is published the afternoon before delivery. Up redispatch is mostly gas that REE adds where the market scheduled too little, for example at midday when the schedule has no gas and much solar. On the rolling 1-day test over 4–17 July 2026 it lowered the wrong calls by 4% on average over three seeds (7,301 to 7,009), on every seed.
    - **Area weather.** `fetch-weather` downloads 100 m wind speed, solar irradiance and cloud cover forecasts from Open-Meteo. Open-Meteo has only hourly values for Spain, so they are interpolated linearly to quarter-hours:
      - **Spots.** Forecasts are taken at the 0.1° spot (about 10 km) nearest each predicted wind, solar or hybrid unit's capacity-weighted centre: 110 spots for the 193 units.
      - **Areas.** Spain is cut into 2° squares (`area_degrees`). Each unit gets the average over the spots in its square, whatever its own technology, because congestion follows how much a whole area's wind and solar plants produce. Units that could not be located, or whose square has no spot, have no weather.
@@ -79,6 +80,7 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
      | Up | 54,280 | 55,148 | 39,089 (72%) | 31,250 | 15,191 | 16,059 |
 
      Almost all upward redispatch in the test days (54,280 of 54,788 unit-quarters among the 193 units) falls on these 41 units, mostly gas plants. Over three seeds the wrong calls were 33,877 on average, against 42,980 without the unit-output and sister inputs (−21%): the unit's own output gave −19% and the sisters a further −2%. Changing only the random seed moves the total of wrong calls by up to about 1,000.
+   - **Backtest.** `backtest --days N` predicts each of the last N days with published redispatch the way a day-ahead prediction is made: each day gets its own models, trained on every earlier day, so every day uses all the data up to the day before. It prints the result tables per day and for all days, and writes the calls to `outputs/backtest_decisions.csv`. This is the test used to judge changes: unlike `train --test-days N`, where one model trained before the first test day predicts all N days, no test day is predicted with stale training. With the day-ahead schedule, the last 14 days (4–17 July 2026) gave 7,009 wrong calls on average over three seeds, out of 55,104 unit-quarters.
    - **Prediction.** `predict` runs both models and writes every unit and 15-minute period to the ledger with the two probabilities and the call, and prints the units with the most up or down quarter-hours.
    - **Validation.** Once REE has published the per-unit files for the predicted days, `validate` counts the logged calls the same way, overall and over the last `window_days`, and scores each direction's probability.
 
@@ -90,12 +92,13 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
 | Calendar | `quarter_hour`, `day_of_week`, `month`, `is_weekend` |
 | Prices (ENTSO-E, OMIE) | `day_ahead_price`, `intraday1_price`, `intraday2_price`, `intraday3_price`, `intraday1_minus_day_ahead_price` (and 2, 3) |
 | Spain forecasts (ENTSO-E) | `demand_forecast_mw`, `wind_generation_forecast_mw`, `solar_generation_forecast_mw`, `demand_minus_wind_solar_mw` |
+| Spain's day-ahead schedule (REE, published the day before) | `spain_schedule_combined_cycle_mwh`, `_nuclear_`, `_wind_`, `_solar_pv_`, `_solar_thermal_`, `_hydro_`, `_pumped_generation_`, `_pumped_consumption_`, `_cogeneration_`, `_import_france_`, `_export_france_`, `_import_portugal_`, `_export_portugal_` |
 | Spain's Phase I redispatch (REE, published the day before) | `spain_redispatch_down_overload_normal_mwh`, `_down_overload_contingency_`, `_down_distribution_`, `_down_voltage_`, `_down_other_`, `_down_total_`, and the same for `up`, plus `spain_redispatch_up_security_mwh` |
 | Weather of the unit's area (Open-Meteo) | `area_wind_speed_kmh` (at 100 m), `area_solar_radiation_wm2`, `area_cloud_cover_pct` |
 | Unit's recent output (ENTSO-E) | `unit_gen_2d_mw`, `unit_gen_2d_day_mw`, `unit_gen_1d_morning_mw`, `unit_gen_1d_noon_mw` |
 | Sister units at the same plant (ENTSO-E) | `plant_gen_2d_mw`, `unit_share_2d`, `unit_rank_2d`, `plant_gen_1d_morning_mw`, `sisters_gen_1d_morning_mw` |
 
-The source files keep their original column names (`da_price`, `load_forecast_mw`, the indicator keys in `[constraint_indicators]`, Open-Meteo's variable names); `features.SOURCE_NAMES` and `spain_redispatch_name` give the model names.
+The source files keep their original column names (`da_price`, `load_forecast_mw`, the indicator keys in `[constraint_indicators]`, Open-Meteo's variable names); `features.SOURCE_NAMES`, `spain_redispatch_name` and `spain_schedule_name` give the model names.
 
 ## Layout
 
@@ -112,7 +115,7 @@ congestion_es/
     esios.py        throttled client for REE's e-sios API
     i90.py          downloads I90DIA files and extracts per-unit redispatch
     locations.py    unit registries, plant lists, name matching and technology groups
-    market.py       ENTSO-E prices and forecasts, REE's national constraint totals, merging into quarter-hour files
+    market.py       ENTSO-E prices and forecasts, REE's national constraint totals and schedule, merging into quarter-hour files
     omie.py         Spanish IDA1-3 prices from OMIE's daily files
     weather.py      Open-Meteo forecasts at wind and solar spots, averaged over areas
     generation.py   ENTSO-E actual output per unit, and the unit and sister inputs made from it
@@ -153,15 +156,17 @@ congestion-es fetch-units                     # add --skip-download to re-run ma
 congestion-es fetch-market --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-intraday --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-constraints --start 2025-10-01 --end 2026-10-16
+congestion-es fetch-schedule --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-weather --start 2025-10-01 --end 2026-10-16
 congestion-es fetch-generation --start 2025-09-29 --end 2026-10-22
 congestion-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
 congestion-es train                           # both directions; --direction Subir for one, --test-days 1 to score only the last published day
+congestion-es backtest --days 3               # the last 3 published days, each trained up to the day before
 congestion-es predict --date 2026-10-15       # needs both directions' models
 congestion-es validate
 ```
 
-To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constraints` and `fetch-weather` for that day and `fetch-generation` for the two days before it, then `predict`.
+To predict a new day, first run `fetch-market`, `fetch-intraday`, `fetch-constraints`, `fetch-schedule` and `fetch-weather` for that day and `fetch-generation` for the two days before it, then `predict`.
 
 `--end` is the day after the last delivery date. `fetch-redispatch` and `fetch-generation` skip days already on disk. The other fetch commands merge new values into the existing files column by column. Requests to e-sios are spaced by `request_interval_seconds`, because REE temporarily blocks clients that send rapid or repeated requests.
 

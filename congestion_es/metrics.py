@@ -36,6 +36,29 @@ def score(y_true: np.ndarray, probability: np.ndarray, threshold: float) -> dict
     }
 
 
+def result_tables(rows: dict[str, pd.DataFrame], title: str) -> str:
+    """Draw one table per direction with each row's happened, spotted and correct calls and its wrong calls split into missed and not real."""
+    width = max(len(label) for label in rows) + 2
+    lines = []
+    for direction in ("down", "up"):
+        lines += [
+            f"{direction.upper()} ({title})",
+            "┌" + "─" * width + "┬──────────┬─────────┬─────────┬──────────────────────────────┐",
+            "│" + " " * width + "│          │         │         │            Wrong             │",
+            "│ " + "Version".ljust(width - 1) + "│ Happened │ Spotted │ Correct ├─────────┬─────────┬──────────┤",
+            "│" + " " * width + "│          │         │         │  Total  │ Missed  │ Not real │",
+            "├" + "─" * width + "┼──────────┼─────────┼─────────┼─────────┼─────────┼──────────┤",
+        ]
+        for label, frame in rows.items():
+            counts = decision_counts(frame)
+            happened, spotted, correct = counts[f"{direction}_happened"], counts[f"{direction}_said"], counts[f"{direction}_right"]
+            values = [happened, spotted, correct, happened + spotted - 2 * correct, happened - correct, spotted - correct]
+            cells = "│".join(f"{value:>{size - 1},} " for value, size in zip(values, (10, 9, 9, 9, 9, 10)))
+            lines.append("│ " + label.ljust(width - 1) + "│" + cells + "│")
+        lines += ["└" + "─" * width + "┴──────────┴─────────┴─────────┴─────────┴─────────┴──────────┘", ""]
+    return "\n".join(lines)
+
+
 def decide(down_probability, up_probability, threshold: float) -> np.ndarray:
     """Call each row up, down or nothing: the more likely direction when its probability reaches the threshold."""
     down, up = np.asarray(down_probability, dtype=float), np.asarray(up_probability, dtype=float)

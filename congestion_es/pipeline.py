@@ -26,6 +26,7 @@ class Inputs:
     coverage: float
     unit_quarters: pd.DataFrame | None = None
     unit_days: pd.DataFrame | None = None
+    schedule: pd.DataFrame | None = None
 
 
 def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -143,7 +144,7 @@ def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
 
 
 def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
-    """Read market, constraint, weather, per-unit output and per-unit redispatch files, and pick the units to predict."""
+    """Read market, constraint, schedule, weather, per-unit output and per-unit redispatch files, and pick the units to predict."""
     redispatch, days = load_redispatch(config)
     if units is None:
         units = select_units(config)
@@ -164,6 +165,7 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
         coverage=covered,
         unit_quarters=unit_quarters,
         unit_days=unit_days,
+        schedule=_read_input(config, "schedule"),
     )
 
 
@@ -179,7 +181,7 @@ def build(config: Config, inputs: Inputs, label_end, dates=None) -> pd.DataFrame
     return build_dataset(
         config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
         inputs.redispatch, inputs.label_days, label_end, dates,
-        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days,
+        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days, schedule=inputs.schedule,
     )
 
 
@@ -191,7 +193,7 @@ def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> p
     return build_dataset(
         config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
         inputs.redispatch, inputs.label_days, label_end, sample=sample,
-        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days,
+        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days, schedule=inputs.schedule,
     )
 
 
@@ -212,6 +214,31 @@ def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, 
     weights = labelled["weight"] if "weight" in labelled else None
     report["positive_rate"] = round(float(np.average(labelled["target"], weights=weights)), 4) if len(labelled) else None
     return bundle, report, holdout
+
+
+def backtest(config: Config, units: pd.DataFrame, days: int) -> pd.DataFrame:
+    """Predict each of the last days with published redispatch as a day-ahead prediction would: with its own models,
+    trained on every earlier day. Return the up/down/nothing calls of those days."""
+    holdouts = {}
+    for direction in DIRECTION_NAMES:
+        settings = config.for_direction(direction)
+        inputs = load_inputs(settings, units)
+        test_days = sorted(inputs.label_days)[-days:]
+        last = test_days[-1]
+        columns = feature_columns(settings)
+        common = (settings, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points, inputs.redispatch, inputs.label_days, last)
+        extra = {"unit_quarters": inputs.unit_quarters, "unit_days": inputs.unit_days, "schedule": inputs.schedule}
+        # the training table is built once with negatives sampled; the test days are built whole for scoring
+        training = build_dataset(*common, sample=(settings.model.negative_fraction, settings.model.random_state, last), **extra)
+        whole = build_dataset(*common, dates=test_days, **extra)
+        scored = []
+        for day in test_days:
+            model = estimator.fit(settings.model, CATEGORICAL, columns, training[training["delivery_date"] < day], day - pd.Timedelta(days=1))
+            rows = whole[whole["delivery_date"] == day]
+            scored.append(rows[KEY].assign(target=rows["target"].to_numpy(), probability=model.predict_proba(rows[columns])[:, 1]))
+        holdouts[direction] = pd.concat(scored, ignore_index=True)
+        del training, whole
+    return holdout_decisions(holdouts, config.model.threshold)
 
 
 def holdout_decisions(holdouts: dict[str, pd.DataFrame], threshold: float) -> pd.DataFrame:

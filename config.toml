@@ -4,6 +4,7 @@ plants_dir = "data/raw/plants"
 redispatch_dir = "data/raw/i90_qh"
 market = "data/raw/market_qh.csv"
 constraints = "data/raw/constraints_qh.csv"
+schedule = "data/raw/pbf_qh.csv"
 weather = "data/raw/weather_spots_qh.csv"
 generation_dir = "data/raw/entsoe_units"
 unit_locations = "data/processed/unit_locations.csv"
@@ -14,6 +15,7 @@ generation_plants = "reference/entsoe_plants.csv"
 model_dir = "models"
 predictions = "outputs/redispatch_decisions.csv"
 validation = "outputs/decision_validation.csv"
+backtest = "outputs/backtest_decisions.csv"
 
 # start is the first day of 15-minute data
 [data]
@@ -75,6 +77,22 @@ up_voltage = 1794
 up_distribution = 1796
 up_other = 1800
 up_security = 2352
+
+# REE e-sios indicator ids of Spain's day-ahead schedule (PBF) per technology, published the afternoon before delivery
+[schedule_indicators]
+pbf_combined_cycle = 9
+pbf_nuclear = 4
+pbf_wind = 12
+pbf_solar_pv = 14
+pbf_solar_thermal = 15
+pbf_hydro = 1
+pbf_pumped_generation = 3
+pbf_pumped_consumption = 25
+pbf_import_france = 28
+pbf_export_france = 32
+pbf_import_portugal = 29
+pbf_export_portugal = 33
+pbf_cogeneration = 17
 
 # one LightGBM yes/no model per direction; a unit-quarter is called up or down when that model's probability is the higher one and reaches threshold
 [model]

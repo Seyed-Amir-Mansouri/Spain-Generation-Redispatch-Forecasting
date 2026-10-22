@@ -33,6 +33,11 @@ def spain_redispatch_name(indicator: str) -> str:
     return f"spain_redispatch_{name}_mwh"
 
 
+def spain_schedule_name(indicator: str) -> str:
+    """Name an REE day-ahead schedule indicator as Spain's scheduled energy, e.g. spain_schedule_combined_cycle_mwh."""
+    return f"spain_schedule_{indicator.removeprefix('pbf_')}_mwh"
+
+
 def feature_columns(config: Config) -> list[str]:
     """List the model inputs, which depend on the configured indicators and IDA3 usage."""
     auctions = (1, 2, 3) if config.features.use_ida3 else (1, 2)
@@ -43,6 +48,7 @@ def feature_columns(config: Config) -> list[str]:
         + [f"intraday{k}_minus_day_ahead_price" for k in auctions]
         + ["demand_forecast_mw", "wind_generation_forecast_mw", "solar_generation_forecast_mw", "demand_minus_wind_solar_mw"]
         + [spain_redispatch_name(name) for name in config.constraint_indicators]
+        + [spain_schedule_name(name) for name in config.schedule_indicators]
         + WEATHER_COLUMNS
         + GENERATION_COLUMNS
     )
@@ -104,11 +110,21 @@ def build_dataset(
     sample: tuple[float, int, pd.Timestamp] | None = None,
     unit_quarters: pd.DataFrame | None = None,
     unit_days: pd.DataFrame | None = None,
+    schedule: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Join national inputs, unit descriptors, weather and each unit's recent output to every unit with the target, one month at a time."""
     national = market.merge(constraints, on=MARKET_KEY, how="left")
+    if schedule is not None:
+        national = national.merge(schedule[MARKET_KEY + [name for name in config.schedule_indicators if name in schedule]], on=MARKET_KEY, how="left")
+    for name in config.schedule_indicators:
+        if name not in national:
+            national[name] = np.nan
     national["delivery_date"] = pd.to_datetime(national["delivery_date"]).dt.normalize()
-    national = national.rename(columns={**SOURCE_NAMES, **{name: spain_redispatch_name(name) for name in config.constraint_indicators}})
+    national = national.rename(columns={
+        **SOURCE_NAMES,
+        **{name: spain_redispatch_name(name) for name in config.constraint_indicators},
+        **{name: spain_schedule_name(name) for name in config.schedule_indicators},
+    })
     for k in (1, 2, 3):
         national[f"intraday{k}_minus_day_ahead_price"] = national[f"intraday{k}_price"] - national["day_ahead_price"]
     national["demand_minus_wind_solar_mw"] = (

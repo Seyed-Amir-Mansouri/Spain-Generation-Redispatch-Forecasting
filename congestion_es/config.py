@@ -18,6 +18,7 @@ class Paths:
     redispatch_dir: Path
     market: Path
     constraints: Path
+    schedule: Path
     weather: Path
     generation_dir: Path
     unit_locations: Path
@@ -28,6 +29,7 @@ class Paths:
     model_dir: Path
     predictions: Path
     validation: Path
+    backtest: Path
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,7 @@ class Config:
     labels: Labels
     features: Features
     constraint_indicators: dict[str, int]
+    schedule_indicators: dict[str, int]
     model: Settings
     validation: Validation
     model_overrides: dict[str, dict] = field(default_factory=dict)
@@ -129,6 +132,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         ),
         features=Features(**raw["features"]),
         constraint_indicators={name: int(value) for name, value in raw["constraint_indicators"].items()},
+        schedule_indicators={name: int(value) for name, value in raw["schedule_indicators"].items()},
         model=Settings(**model),
         validation=Validation(**raw["validation"]),
         model_overrides=overrides,

@@ -115,6 +115,14 @@ def cmd_fetch_generation(args: argparse.Namespace) -> None:
     print(json.dumps(stats))
 
 
+def cmd_fetch_schedule(args: argparse.Namespace) -> None:
+    """Fetch REE's national day-ahead schedule per technology per quarter-hour."""
+    config = load_config(args.config)
+    schedule = market.fetch_constraints(_esios(config), config.schedule_indicators, _date(args.start), _date(args.end))
+    frame = market.upsert(config.resolve(config.paths.schedule), schedule)
+    print(f"schedule: {len(schedule)} new rows, {len(frame)} total")
+
+
 def cmd_fetch_redispatch(args: argparse.Namespace) -> None:
     """Download per-unit redispatch (I90DIA) for each day in a range, skipping cached days."""
     config = load_config(args.config)
@@ -147,6 +155,22 @@ def cmd_train(args: argparse.Namespace) -> None:
     if all(holdouts.get(direction) is not None for direction in pipeline.DIRECTION_NAMES):
         decisions = pipeline.holdout_decisions(holdouts, base.model.threshold)
         print(json.dumps({"holdout_decisions": metrics.decision_counts(decisions)}, indent=2, default=str))
+
+
+def cmd_backtest(args: argparse.Namespace) -> None:
+    """Predict each of the last days with published redispatch with models trained on every earlier day, and print the result tables."""
+    config = load_config(args.config)
+    decisions = pipeline.backtest(config, pipeline.select_units(config), args.days)
+    path = config.resolve(config.paths.backtest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    decisions.to_csv(path, index=False)
+    days = sorted(decisions["delivery_date"].unique())
+    rows = {f"{day:%d %b %Y}": decisions[decisions["delivery_date"] == day] for day in days}
+    if len(days) > 1:
+        rows[f"All {len(days)} days"] = decisions
+    title = f"{decisions['unit'].nunique()} units, each day trained up to the day before, threshold {config.model.threshold}"
+    print(metrics.result_tables(rows, title))
+    print(f"calls: {path}")
 
 
 def cmd_predict(args: argparse.Namespace) -> None:
@@ -207,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("fetch-intraday", cmd_fetch_intraday, "fetch OMIE IDA1-3 prices"),
         ("fetch-weather", cmd_fetch_weather, "fetch Open-Meteo weather at the wind and solar spots"),
         ("fetch-constraints", cmd_fetch_constraints, "fetch REE national constraint totals"),
+        ("fetch-schedule", cmd_fetch_schedule, "fetch REE's national day-ahead schedule per technology"),
         ("fetch-generation", cmd_fetch_generation, "download ENTSO-E actual output per unit"),
         ("fetch-redispatch", cmd_fetch_redispatch, "download per-unit redispatch files (I90DIA)"),
     ):
@@ -219,6 +244,10 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--direction", help="train only this direction, e.g. Bajar or Subir")
     train.add_argument("--test-days", type=int, help="score the last N days with published redispatch before the final refit; default test_days in config, 0 for none")
     train.set_defaults(func=cmd_train)
+
+    backtest = sub.add_parser("backtest", help="predict each of the last days with published redispatch, each trained up to the day before")
+    backtest.add_argument("--days", type=int, default=1, help="number of last days with published redispatch to predict")
+    backtest.set_defaults(func=cmd_backtest)
 
     predict = sub.add_parser("predict", help="call each unit up, down or nothing for a delivery day")
     predict.add_argument("--date", required=True, help="delivery date YYYY-MM-DD")

@@ -66,7 +66,7 @@ def fetch_market(client, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame
 
 
 def fetch_constraints(client, indicators: dict[str, int], start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Fetch REE's national day-ahead constraint energy per quarter-hour for each configured indicator."""
+    """Fetch a national REE e-sios energy series per quarter-hour for each indicator, such as constraint totals or the day-ahead schedule."""
     days = pd.date_range(start, end - pd.Timedelta(days=1), freq="D")
     frame = pd.MultiIndex.from_product([days, range(96)], names=MARKET_KEY).to_frame(index=False)
     for name, indicator_id in indicators.items():

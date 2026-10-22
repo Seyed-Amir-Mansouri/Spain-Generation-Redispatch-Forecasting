@@ -226,3 +226,41 @@ def test_train_takes_the_number_of_test_days_from_the_command_line():
     args = cli.build_parser().parse_args(["train", "--test-days", "1"])
     assert args.test_days == 1 and args.func is cli.cmd_train
     assert cli.build_parser().parse_args(["train"]).test_days is None
+
+
+def test_spain_schedule_joins_the_national_inputs_under_readable_names(config):
+    inputs = _inputs(config, days=10)
+    schedule = inputs.market[["delivery_date", "period"]].assign(pbf_combined_cycle=1500.0, pbf_solar_pv=6000.0)
+    with_schedule = dataclasses.replace(inputs, schedule=schedule)
+    dataset = pipeline.build(config, with_schedule, None)
+    assert "spain_schedule_combined_cycle_mwh" in feature_columns(config)
+    assert dataset["spain_schedule_combined_cycle_mwh"].eq(1500.0).all()
+    assert dataset["spain_schedule_nuclear_mwh"].isna().all()
+    assert set(feature_columns(config)) <= set(dataset.columns)
+
+
+def test_backtest_trains_each_day_only_on_the_days_before_it(config, monkeypatch):
+    synthetic = {direction: _inputs(config, direction, days=60) for direction in pipeline.DIRECTION_NAMES}
+    monkeypatch.setattr(pipeline, "load_inputs", lambda settings, units: synthetic[settings.labels.direction])
+    trained_until = []
+    fit = estimator.fit
+    monkeypatch.setattr(estimator, "fit", lambda settings, categorical, features, rows, end: trained_until.append((rows["delivery_date"].max(), end)) or fit(settings, categorical, features, rows, end))
+    decisions = pipeline.backtest(config, synthetic["Bajar"].units, 3)
+    labelled = sorted(synthetic["Bajar"].label_days)
+    assert sorted(decisions["delivery_date"].unique()) == labelled[-3:]
+    assert len(decisions) == 3 * 96 * len(UNITS)
+    for (latest, end), day in zip(trained_until, labelled[-3:] * 2):
+        assert latest == end == day - pd.Timedelta(days=1)
+    assert set(decisions["decision"]) <= {"down", "up", "nothing"}
+
+
+def test_result_tables_show_happened_spotted_correct_and_wrong_split():
+    frame = pd.DataFrame({
+        "delivery_date": pd.Timestamp("2026-07-17"), "period": [0, 1, 2, 3],
+        "actual": ["up", "up", "nothing", "down"], "decision": ["up", "nothing", "up", "down"],
+    })
+    text = metrics.result_tables({"17 Jul 2026": frame}, "test")
+    lines = text.splitlines()
+    assert lines[0] == "DOWN (test)" and "UP (test)" in lines
+    up_row = [line for line in lines[lines.index("UP (test)"):] if line.startswith("│ 17 Jul")][0]
+    assert [int(cell) for cell in up_row.split("│")[2:-1]] == [2, 2, 1, 2, 1, 1]
