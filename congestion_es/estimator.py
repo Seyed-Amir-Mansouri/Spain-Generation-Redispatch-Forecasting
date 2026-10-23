@@ -31,6 +31,8 @@ class Settings:
     cat_smooth: float = 10.0
     cat_l2: float = 10.0
     min_data_per_group: int = 100
+    feature_fraction: float = 1.0
+    bagging_fraction: float = 1.0
 
 
 def _estimator(settings: Settings) -> LGBMClassifier:
@@ -45,6 +47,9 @@ def _estimator(settings: Settings) -> LGBMClassifier:
         cat_smooth=settings.cat_smooth,
         cat_l2=settings.cat_l2,
         min_data_per_group=settings.min_data_per_group,
+        colsample_bytree=settings.feature_fraction,
+        subsample=settings.bagging_fraction,
+        subsample_freq=1 if settings.bagging_fraction < 1 else 0,
         random_state=settings.random_state,
         verbose=-1,
     )

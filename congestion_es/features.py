@@ -25,6 +25,7 @@ SOURCE_NAMES = {
     "cloud_cover": "area_cloud_cover_pct",
 }
 WEATHER_COLUMNS = ["area_wind_speed_kmh", "area_solar_radiation_wm2", "area_cloud_cover_pct"]
+ROUTINE_COLUMNS = [f"unit_{name}_rate_{span}" for name in ("down", "up") for span in ("month_hour", "hour")]
 
 
 def spain_redispatch_name(indicator: str) -> str:
@@ -51,6 +52,7 @@ def feature_columns(config: Config) -> list[str]:
         + [spain_schedule_name(name) for name in config.schedule_indicators]
         + WEATHER_COLUMNS
         + GENERATION_COLUMNS
+        + ROUTINE_COLUMNS
     )
 
 
@@ -68,6 +70,37 @@ def add_generation(frame: pd.DataFrame, unit_quarters: pd.DataFrame | None, unit
     if unit_days is not None:
         frame = frame.merge(unit_days[unit_days["delivery_date"].isin(days)], on=["delivery_date", "unit"], how="left")
     missing = [column for column in GENERATION_COLUMNS if column not in frame]
+    frame[missing] = np.nan
+    return frame
+
+
+def routine_rates(moved: dict[str, pd.DataFrame], units: list[str], start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """Share of days from start to end each unit was moved in each direction at each hour: by month, weekday or weekend
+    and hour (unit_down_rate_month_hour), and by hour over the whole span (unit_down_rate_hour). moved holds the
+    delivery_date, hour and unit of every moved unit-hour per direction name."""
+    days = pd.DataFrame({"delivery_date": pd.date_range(start, end)})
+    days["month"], days["is_weekend"] = days["delivery_date"].dt.month, (days["delivery_date"].dt.weekday >= 5).astype(int)
+    grid = days.merge(pd.DataFrame({"hour": range(24)}), how="cross").merge(pd.DataFrame({"unit": units}), how="cross")
+    keys = ["unit", "month", "is_weekend", "hour"]
+    rates = grid[keys].drop_duplicates()
+    for name, rows in moved.items():
+        flags = grid.merge(rows[["delivery_date", "hour", "unit"]].drop_duplicates().assign(moved=1.0), on=["delivery_date", "hour", "unit"], how="left")
+        flags["moved"] = flags["moved"].fillna(0.0)
+        by_month = flags.groupby(keys, as_index=False)["moved"].mean().rename(columns={"moved": f"unit_{name}_rate_month_hour"})
+        by_hour = flags.groupby(["unit", "hour"], as_index=False)["moved"].mean().rename(columns={"moved": f"unit_{name}_rate_hour"})
+        rates = rates.merge(by_month, on=keys).merge(by_hour, on=["unit", "hour"])
+    return rates
+
+
+def add_routine(frame: pd.DataFrame, routine: pd.DataFrame | None) -> pd.DataFrame:
+    """Attach each unit's routine for the row's month, weekday or weekend and hour; months outside the routine's span keep only the hourly rate."""
+    if routine is not None:
+        frame["hour"] = frame["period"] // 4
+        by_month = routine.drop(columns=[c for c in routine if c.endswith("_rate_hour")])
+        by_hour = routine[["unit", "hour"] + [c for c in routine if c.endswith("_rate_hour")]].drop_duplicates(["unit", "hour"])
+        frame = frame.merge(by_month, on=["unit", "month", "is_weekend", "hour"], how="left").merge(by_hour, on=["unit", "hour"], how="left")
+        frame = frame.drop(columns="hour")
+    missing = [column for column in ROUTINE_COLUMNS if column not in frame]
     frame[missing] = np.nan
     return frame
 
@@ -111,8 +144,9 @@ def build_dataset(
     unit_quarters: pd.DataFrame | None = None,
     unit_days: pd.DataFrame | None = None,
     schedule: pd.DataFrame | None = None,
+    routine: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Join national inputs, unit descriptors, weather and each unit's recent output to every unit with the target, one month at a time."""
+    """Join national inputs, unit descriptors, weather, each unit's recent output and routine to every unit with the target, one month at a time."""
     national = market.merge(constraints, on=MARKET_KEY, how="left")
     if schedule is not None:
         national = national.merge(schedule[MARKET_KEY + [name for name in config.schedule_indicators if name in schedule]], on=MARKET_KEY, how="left")
@@ -149,6 +183,7 @@ def build_dataset(
         frame["is_weekend"] = (frame["day_of_week"] >= 5).astype("int8")
         frame = add_weather(frame, weather[weather["delivery_date"].isin(month["delivery_date"].unique())], points)
         frame = add_generation(frame, unit_quarters, unit_days)
+        frame = add_routine(frame, routine)
         frame = frame.merge(labels, on=KEY, how="left")
         target = frame["redispatched"] if label_end is not None else pd.Series(np.nan, index=frame.index)
         frame["target"] = target.where(frame["delivery_date"] <= label_end) if label_end is not None else target

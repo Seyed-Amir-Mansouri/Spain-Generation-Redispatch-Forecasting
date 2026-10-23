@@ -2,6 +2,7 @@
 registry_dir = "data/raw/registry"
 plants_dir = "data/raw/plants"
 redispatch_dir = "data/raw/i90_qh"
+routine_dir = "data/raw/i90"
 market = "data/raw/market_qh.csv"
 constraints = "data/raw/constraints_qh.csv"
 schedule = "data/raw/pbf_qh.csv"
@@ -42,6 +43,12 @@ plant_degrees = 0.1
 
 # Open-Meteo weather at the spots of the wind and solar units, averaged over square areas;
 # calls_per_hour keeps requests under Open-Meteo's free limit of 5,000 weighted calls an hour
+# how often each unit was redispatched at each hour from start to end, from REE's hourly files:
+# by month, weekday or weekend and hour, and by hour over the whole span
+[routine]
+start = "2025-05-01"
+end = "2025-09-30"
+
 [weather]
 spot_degrees = 0.1
 area_degrees = 2.0
@@ -99,7 +106,7 @@ pbf_cogeneration = 17
 test_days = 60
 threshold = 0.5
 learning_rate = 0.05
-n_estimators = 600
+n_estimators = 1200
 num_leaves = 63
 reg_lambda = 1.0
 min_child_samples = 100
@@ -110,10 +117,13 @@ recency_half_life_days = 60
 
 # settings that differ per direction
 [model.Bajar]
-n_estimators = 1200
 cat_smooth = 50
 cat_l2 = 10
 min_data_per_group = 200
+
+# the upward model fits each tree on a random 70% of the rows
+[model.Subir]
+bagging_fraction = 0.7
 
 [validation]
 window_days = 14

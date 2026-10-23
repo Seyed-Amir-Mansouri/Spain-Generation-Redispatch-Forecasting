@@ -16,6 +16,7 @@ class Paths:
     registry_dir: Path
     plants_dir: Path
     redispatch_dir: Path
+    routine_dir: Path
     market: Path
     constraints: Path
     schedule: Path
@@ -44,6 +45,12 @@ class Generation:
     request_interval_seconds: float
     known_until_period: int
     plant_degrees: float
+
+
+@dataclass(frozen=True)
+class Routine:
+    start: pd.Timestamp
+    end: pd.Timestamp
 
 
 @dataclass(frozen=True)
@@ -85,6 +92,7 @@ class Config:
     units: Units
     weather: Weather
     generation: Generation
+    routine: Routine
     labels: Labels
     features: Features
     constraint_indicators: dict[str, int]
@@ -122,6 +130,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
         units=Units(**raw["units"]),
         weather=Weather(**raw["weather"]),
         generation=Generation(**raw["generation"]),
+        routine=Routine(start=pd.Timestamp(raw["routine"]["start"]), end=pd.Timestamp(raw["routine"]["end"])),
         labels=Labels(
             directions=tuple(labels["directions"]),
             codes={direction: tuple(codes) for direction, codes in labels["restriction_types"].items()},

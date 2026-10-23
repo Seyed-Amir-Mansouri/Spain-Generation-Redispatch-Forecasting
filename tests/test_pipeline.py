@@ -6,7 +6,7 @@ import pandas as pd
 
 from congestion_es import estimator, ledger, locations, metrics, pipeline, validate, weather
 from congestion_es.config import DEFAULT_CONFIG, load_config
-from congestion_es.features import feature_columns
+from congestion_es.features import feature_columns, routine_rates
 
 UNITS = ["EOLA", "FVB", "CCGC"]
 
@@ -160,7 +160,8 @@ def test_each_direction_uses_its_own_restriction_codes_and_model_settings():
     assert {"SCB", "SCA", "RTD", "EST"} <= set(down.labels.restriction_types)
     assert {"COT", "SOT", "RSI"} <= set(up.labels.restriction_types)
     assert up.labels.direction == "Subir"
-    assert down.model.n_estimators > up.model.n_estimators == loaded.model.n_estimators
+    assert down.model.cat_smooth > up.model.cat_smooth == loaded.model.cat_smooth
+    assert up.model.bagging_fraction < down.model.bagging_fraction == 1.0
 
 
 def test_recency_weight_halves_every_half_life():
@@ -237,6 +238,36 @@ def test_spain_schedule_joins_the_national_inputs_under_readable_names(config):
     assert dataset["spain_schedule_combined_cycle_mwh"].eq(1500.0).all()
     assert dataset["spain_schedule_nuclear_mwh"].isna().all()
     assert set(feature_columns(config)) <= set(dataset.columns)
+
+
+def test_routine_rates_how_often_a_unit_was_moved_at_each_hour():
+    # 1-7 July 2025: Tuesday to Monday, so five weekdays and two weekend days
+    moved = {
+        "down": pd.DataFrame({"delivery_date": pd.to_datetime(["2025-07-01", "2025-07-02", "2025-07-05"]), "hour": 20, "unit": "SAGU1"}),
+        "up": pd.DataFrame({"delivery_date": pd.to_datetime(["2025-07-01"]), "hour": 3, "unit": "PALOS2"}),
+    }
+    rates = routine_rates(moved, ["PALOS2", "SAGU1"], pd.Timestamp("2025-07-01"), pd.Timestamp("2025-07-07")).set_index(["unit", "is_weekend", "hour"])
+    assert rates.loc[("SAGU1", 0, 20), "unit_down_rate_month_hour"] == 2 / 5
+    assert rates.loc[("SAGU1", 1, 20), "unit_down_rate_month_hour"] == 1 / 2
+    assert rates.loc[("SAGU1", 1, 20), "unit_down_rate_hour"] == 3 / 7
+    assert rates.loc[("SAGU1", 0, 3), "unit_up_rate_hour"] == 0
+    assert rates.loc[("PALOS2", 0, 3), "unit_up_rate_month_hour"] == 1 / 5
+
+
+def test_routine_joins_by_month_and_hour_and_months_outside_it_keep_the_hourly_rate(config):
+    inputs = _inputs(config, days=10)
+    days = sorted(inputs.market["delivery_date"].unique())
+    unit = inputs.units["unit"].iloc[0]
+    month = pd.Timestamp(days[0]).month
+    routine = pd.DataFrame({"unit": unit, "month": [month, month % 12 + 1], "is_weekend": 0, "hour": 5,
+                            "unit_down_rate_month_hour": [0.5, 0.9], "unit_down_rate_hour": 0.25,
+                            "unit_up_rate_month_hour": 0.0, "unit_up_rate_hour": 0.0})
+    dataset = pipeline.build(config, dataclasses.replace(inputs, routine=routine), None)
+    weekday = dataset[(dataset["unit"] == unit) & (dataset["period"] // 4 == 5) & (dataset["is_weekend"] == 0)]
+    assert weekday["unit_down_rate_hour"].eq(0.25).all()
+    assert weekday["unit_down_rate_month_hour"].eq(0.5).all()
+    assert dataset.loc[dataset["period"] // 4 != 5, "unit_down_rate_hour"].isna().all()
+    assert set(feature_columns(config)) <= set(dataset.columns) and "hour" not in dataset
 
 
 def test_backtest_trains_each_day_only_on_the_days_before_it(config, monkeypatch):

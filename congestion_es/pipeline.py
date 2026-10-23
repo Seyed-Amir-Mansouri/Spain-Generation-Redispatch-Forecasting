@@ -8,7 +8,7 @@ import pandas as pd
 
 from . import estimator, generation, i90, ledger, locations, metrics, weather
 from .config import Config
-from .features import CATEGORICAL, KEY, build_dataset, feature_columns
+from .features import CATEGORICAL, KEY, build_dataset, feature_columns, routine_rates
 
 DIRECTION_NAMES = {"Bajar": "down", "Subir": "up"}
 WEATHER_TECHNOLOGIES = ("wind", "solar_pv", "solar_thermal", "hybrid")
@@ -27,6 +27,7 @@ class Inputs:
     unit_quarters: pd.DataFrame | None = None
     unit_days: pd.DataFrame | None = None
     schedule: pd.DataFrame | None = None
+    routine: pd.DataFrame | None = None
 
 
 def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -111,6 +112,19 @@ def unit_generation(config: Config, units: pd.DataFrame) -> tuple[pd.DataFrame, 
     return generation.unit_inputs(output, plants(config, units), config.generation.known_until_period)
 
 
+def unit_routine(config: Config, units: pd.DataFrame) -> pd.DataFrame:
+    """Read REE's hourly per-unit redispatch over the routine span and rate how often each unit was moved each way at each hour."""
+    aliases = locations.load_aliases(config.resolve(config.paths.unit_aliases))
+    moved = {}
+    for direction, name in DIRECTION_NAMES.items():
+        rows, _ = i90.load(config.resolve(config.paths.routine_dir), direction, config.labels.codes[direction])
+        rows = rows[rows["delivery_date"].between(config.routine.start, config.routine.end)].assign(unit=lambda f: f["unit"].replace(aliases))
+        rows = rows.groupby(["delivery_date", "hour", "unit"], as_index=False)["mwh"].sum()
+        # an hour holds four quarter-hours, so it counts as moved at four times the quarter-hour minimum
+        moved[name] = rows[rows["mwh"] >= 4 * config.labels.min_mwh]
+    return routine_rates(moved, sorted(units["unit"]), config.routine.start, config.routine.end)
+
+
 def unit_technology(config: Config, units: pd.Series) -> pd.Series:
     """Return each programming unit's grouped production type from REE's registry."""
     programming, _ = locations.load_registry(config.resolve(config.paths.registry_dir))
@@ -144,7 +158,7 @@ def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
 
 
 def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
-    """Read market, constraint, schedule, weather, per-unit output and per-unit redispatch files, and pick the units to predict."""
+    """Read market, constraint, schedule, weather, per-unit output, routine and per-unit redispatch files, and pick the units to predict."""
     redispatch, days = load_redispatch(config)
     if units is None:
         units = select_units(config)
@@ -166,6 +180,7 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
         unit_quarters=unit_quarters,
         unit_days=unit_days,
         schedule=_read_input(config, "schedule"),
+        routine=unit_routine(config, units),
     )
 
 
@@ -181,7 +196,7 @@ def build(config: Config, inputs: Inputs, label_end, dates=None) -> pd.DataFrame
     return build_dataset(
         config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
         inputs.redispatch, inputs.label_days, label_end, dates,
-        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days, schedule=inputs.schedule,
+        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days, schedule=inputs.schedule, routine=inputs.routine,
     )
 
 
@@ -193,7 +208,7 @@ def build_training(config: Config, inputs: Inputs, label_end: pd.Timestamp) -> p
     return build_dataset(
         config, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points,
         inputs.redispatch, inputs.label_days, label_end, sample=sample,
-        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days, schedule=inputs.schedule,
+        unit_quarters=inputs.unit_quarters, unit_days=inputs.unit_days, schedule=inputs.schedule, routine=inputs.routine,
     )
 
 
@@ -227,7 +242,7 @@ def backtest(config: Config, units: pd.DataFrame, days: int) -> pd.DataFrame:
         last = test_days[-1]
         columns = feature_columns(settings)
         common = (settings, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points, inputs.redispatch, inputs.label_days, last)
-        extra = {"unit_quarters": inputs.unit_quarters, "unit_days": inputs.unit_days, "schedule": inputs.schedule}
+        extra = {"unit_quarters": inputs.unit_quarters, "unit_days": inputs.unit_days, "schedule": inputs.schedule, "routine": inputs.routine}
         # the training table is built once with negatives sampled; the test days are built whole for scoring
         training = build_dataset(*common, sample=(settings.model.negative_fraction, settings.model.random_state, last), **extra)
         whole = build_dataset(*common, dates=test_days, **extra)
