@@ -23,13 +23,13 @@
   </div>
   <div class="mast">
     <div class="brand">
-      <div class="eyebrow">Day-ahead redispatch forecast · Phase I technical constraints</div>
+      <div class="eyebrow">Grid redispatch forecast</div>
       <h1>Spain</h1>
-      <p class="lede">Which of the 41 programming units will Spain's system operator move up or down tomorrow, called before noon the day before from public data only.</p>
+      <p class="lede">Every day, Spain's grid operator, Red Eléctrica (REE), checks the electricity market's production plan against what the grid can safely carry. Where it cannot, REE orders some power plants to produce more and others to produce less. This is called redispatch. Our model forecasts these orders for 41 large generating units from public data. This page compares its forecasts with what REE actually did over 14 past days.</p>
     </div>
     <div class="stamp num">
-      <span>Test window <b id="window"></b></span>
-      <span>Units <b id="unit-count"></b> · each day trained on every earlier day</span>
+      <span>Days checked <b id="window"></b></span>
+      <span><b id="unit-count"></b> generating units · real outcomes from REE</span>
     </div>
   </div>
 </header>
@@ -41,11 +41,13 @@
         <span class="label">Call threshold</span>
         <span class="thr-value num" id="thr-value">0.50</span>
       </div>
-      <input type="range" id="thr" min="0" max="7" step="1" value="0" aria-label="Call threshold">
-      <div class="ticks"><span>0.5</span><span>0.6</span><span>0.7</span><span>0.8</span><span>0.9</span><span>0.95</span><span>0.99</span><span>0.999</span></div>
+      <p class="explain">For every unit and hour, the model gives a chance from 0 to 1 that REE will move it. A unit is <b>called</b> (forecast to be moved) when its chance reaches this threshold. Slide right to be stricter: fewer calls, more of them right, but more real moves missed.</p>
+      <input type="range" id="thr" min="0" max="9" step="1" value="0" aria-label="Call threshold">
+      <div class="ticks"><span>0.50</span><span>0.55</span><span>0.60</span><span>0.65</span><span>0.70</span><span>0.75</span><span>0.80</span><span>0.85</span><span>0.90</span><span>0.95</span></div>
       <p class="hint" id="thr-hint"></p>
     </div>
     <div class="panel stacked">
+      <p class="explain"><b>Up</b>: REE asks a unit to produce more than it sold in the market, often to start a gas plant that supports the grid's voltage. <b>Down</b>: REE cuts a unit's output, often where power lines are too full. Pick one day to see it alone, or all days together.</p>
       <div class="row"><span class="label">Direction</span>
         <div class="seg" id="dir" role="group" aria-label="Direction">
           <button type="button" data-dir="any" aria-pressed="true">Up or down</button>
@@ -59,14 +61,19 @@
     </div>
   </section>
 
+  <div class="sec">
+    <h2>How often the forecast was right</h2>
+    <p class="explain">Each count below is one unit on one day. A unit was <b>moved</b> if REE changed its output in any quarter-hour of that day. A forecast is right when a called unit was moved, or when a unit that was not called stayed as planned.</p>
+  </div>
   <section class="kpis" aria-label="Results">
-    <div class="kpi lead"><span class="label">All right</span><div class="fig num" id="k-acc"></div><p id="k-acc-note"></p></div>
-    <div class="kpi"><span class="label">Precision</span><div class="fig num" id="k-prec"></div><p id="k-prec-note"></p></div>
-    <div class="kpi"><span class="label">Recall</span><div class="fig num" id="k-rec"></div><p id="k-rec-note"></p></div>
-    <div class="kpi"><span class="label">Flagged · moved</span><div class="fig num" id="k-count"></div><p id="k-count-note"></p></div>
+    <div class="kpi lead"><span class="label">Right overall</span><div class="fig num" id="k-acc"></div><p id="k-acc-note"></p></div>
+    <div class="kpi"><span class="label">Calls that came true</span><div class="fig num" id="k-prec"></div><p id="k-prec-note"></p></div>
+    <div class="kpi"><span class="label">Moves caught</span><div class="fig num" id="k-rec"></div><p id="k-rec-note"></p></div>
+    <div class="kpi"><span class="label">Called · moved</span><div class="fig num" id="k-count"></div><p id="k-count-note"></p></div>
   </section>
 
   <section class="panel ledger" aria-label="Outcome mix">
+    <p class="explain">The bar splits every case into four groups. Green and grey are right answers. Red is a move the model missed. Purple is a false alarm: a call with no move.</p>
     <div class="stack" id="stack"></div>
     <div class="legend" id="legend"></div>
   </section>
@@ -81,6 +88,7 @@
           <button type="button" data-mode="technology" aria-pressed="false">Technology</button>
         </div>
       </div>
+      <p class="explain">Each light is one unit at its plant; units at the same site sit in a small ring. <b>Forecast</b> lights the units the model called, blue for up and orange for down, and a brighter, faster pulse means the model was more certain. <b>Outcome</b> shows whether each forecast was right. <b>Technology</b> colours units by plant type. Point at or tap a light for details.</p>
       <div class="mapbox" id="mapbox">
         <svg id="map" role="img" aria-label="Map of Spain with each unit as a light"></svg>
         <div class="tip" id="tip" hidden></div>
@@ -96,8 +104,9 @@
   <section class="panel">
     <div class="chart-head">
       <h2>Day by day</h2>
-      <span class="label">Share of units called right · tap a day</span>
+      <span class="label">Share of units forecast right</span>
     </div>
+    <p class="explain">Each bar is one day: the share of the 41 units whose forecast was right, whether they were moved or not. Tap a bar to show that day across the whole page.</p>
     <div class="chart" id="chart"></div>
   </section>
 
@@ -111,13 +120,14 @@
         <input class="search" id="search" type="search" placeholder="Find a unit" aria-label="Find a unit">
       </div>
     </div>
+    <p class="explain">One card per unit, grouped by technology. With one day picked, the 24 small squares are the hours of that day and show where REE moved the unit and where the model expected it. With all days picked, the strip shows each day's result, oldest first. Tap a card for its hour-by-hour chart.</p>
     <div class="legend" id="hour-legend"></div>
     <div id="board" class="board"></div>
   </section>
 
   <footer class="foot">
     <span id="source"></span>
-    <span>A unit counts as moved on a day when REE redispatched it by at least 1.25 MWh in any quarter-hour (Phase I, technical constraints). It is called when its highest probability of the day reaches the threshold. Inputs: prices, Spain's forecasts and day-ahead schedule, REE's Phase I totals, weather, each unit's recent ENTSO-E output and its sister units, and last summer's routine.</span>
+    <span>A unit counts as moved on a day when REE redispatched it by at least 1.25 MWh in any quarter-hour, in the first stage of its technical-constraint process. It is called when its highest chance of the day reaches the threshold. Each day was forecast by a model that had never seen that day's outcome. Inputs: prices, Spain's forecasts and day-ahead schedule, REE's national redispatch totals, weather, each unit's recent ENTSO-E output and its sister units, and last summer's routine.</span>
     <span>Map: each light is a unit at its plant; sister units at one site sit in a small ring. Outlines from Natural Earth.</span>
   </footer>
 </div>

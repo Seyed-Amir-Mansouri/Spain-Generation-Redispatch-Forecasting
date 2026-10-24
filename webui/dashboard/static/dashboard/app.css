@@ -72,6 +72,12 @@ h1 { margin: 0; font-family: var(--display); font-weight: 500; font-size: clamp(
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 .ticks { display: flex; justify-content: space-between; font: .72rem var(--mono); color: var(--faint); }
 .hint { font-size: .82rem; color: var(--muted); margin: 0; }
+.explain { margin: 0; font-size: .9rem; line-height: 1.55; color: var(--muted); max-width: 88ch; }
+.explain b { color: var(--fg); font-weight: 500; }
+.atlas .explain { color: var(--n-text); }
+.atlas .explain b { color: var(--n-fg); }
+.sec { display: grid; gap: 6px; margin-bottom: -8px; }
+.chart-head + .explain { margin-top: 6px; }
 button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visible, .list li:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .days { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
@@ -117,8 +123,8 @@ button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visib
 #map .land-other { fill: var(--n-other); stroke: var(--n-edge); stroke-width: .6; }
 #map .grat { stroke: rgb(169 214 251 / .08); stroke-width: 1; stroke-dasharray: 2 6; }
 #map .grat-label { fill: rgb(169 214 251 / .35); font: 9px var(--mono); letter-spacing: .08em; }
-#map .city circle { fill: rgb(255 255 255 / .4); }
-#map .city text { fill: rgb(255 255 255 / .38); font: 500 10px var(--body); letter-spacing: .14em; text-transform: uppercase; }
+#map .province { fill: none; stroke: rgb(169 214 251 / .22); stroke-width: .7; stroke-linejoin: round; stroke-dasharray: 3 2; }
+#map .province-label { fill: rgb(214 232 248 / .42); font: 500 8.5px var(--body); letter-spacing: .1em; text-transform: uppercase; pointer-events: none; }
 #map .sea-label { fill: rgb(169 214 251 / .26); font: 300 13px var(--display); letter-spacing: .32em; }
 .map-legend { color: var(--n-text); font-size: .8rem; }
 .map-legend b { color: var(--n-fg); }
@@ -227,5 +233,5 @@ h2 { margin: 0; font: 500 1.4rem var(--display); color: var(--fg); letter-spacin
 @media (max-width: 980px) { .atlas { grid-template-columns: 1fr; } .atlas-list { border-left: 0; border-top: 1px solid var(--n-line); } .list { max-height: 320px; } }
 @media (max-width: 900px) { .rail { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .chart { gap: 4px; height: 150px; } .bar .val { font-size: .58rem; } .stamp { justify-items: start; text-align: left; } .search { width: 100%; }
-  .atlas-map { padding: 16px 12px 12px; } #map .city text { font-size: 14px; } }
+  .atlas-map { padding: 16px 12px 12px; } .ticks span:nth-child(even) { visibility: hidden; } #map .province-label { font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .light .halo, .light .ring { animation: none !important; } .light.on .halo { opacity: var(--glow); } }

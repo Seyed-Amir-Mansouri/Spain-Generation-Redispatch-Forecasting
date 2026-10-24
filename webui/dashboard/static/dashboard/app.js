@@ -1,12 +1,10 @@
 const DATA = JSON.parse(document.getElementById("results-data").textContent);
 const MAP = JSON.parse(document.getElementById("map-data").textContent);
-const STOPS = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 0.999];
+const STOPS = Array.from({ length: 10 }, (_, i) => +(0.5 + 0.05 * i).toFixed(2));
 const TECH_ORDER = ["Combined cycle", "Solar PV", "Nuclear", "Pumped hydro", "Coal"];
-const OUTCOMES = { hit: ["Moved, called", "--hit"], miss: ["Moved, missed", "--miss"], false: ["Called, did not move", "--false"], quiet: ["Quiet, called quiet", "--quiet"] };
+const OUTCOMES = { hit: ["Moved, as called", "--hit"], miss: ["Moved, missed", "--miss"], false: ["False alarm", "--false"], quiet: ["Not moved, as expected", "--quiet"] };
 const LIGHTS = { hit: "--n-hit", miss: "--n-miss", false: "--n-false", quiet: "--n-quiet" };
 const TECH_LIGHTS = { "Combined cycle": "--t-ccgt", "Solar PV": "--t-solar", "Nuclear": "--t-nuclear", "Pumped hydro": "--t-hydro", "Coal": "--t-coal" };
-const CITIES = [["Madrid", 40.42, -3.70], ["Barcelona", 41.39, 2.17], ["Valencia", 39.47, -0.38], ["Sevilla", 37.39, -5.98], ["Bilbao", 43.26, -2.93],
-  ["A Coruña", 43.36, -8.41], ["Málaga", 36.72, -4.42], ["Zaragoza", 41.65, -0.88], ["Lisboa", 38.72, -9.14], ["Palma", 39.57, 2.65]];
 const SEAS = [["Mar Mediterráneo", 37.25, 0.2], ["Océano Atlántico", 36.25, -9.85], ["Mar Cantábrico", 43.78, -6.2]];
 const state = { t: 0.5, dir: "any", day: -1, filter: "all", query: "", open: null, mode: "forecast" };
 const units = Object.fromEntries(DATA.units.map(u => [u.u, u]));
@@ -21,6 +19,7 @@ const wk = i => new Date(DATA.days[i] + "T12:00:00Z").toLocaleDateString("en-GB"
 const pct = (a, b) => (b ? (100 * a / b) : NaN);
 const show = v => (isNaN(v) ? "–" : v.toFixed(1));
 const fmtP = p => p.toFixed(p >= 0.99 ? 3 : 2);
+const thr = () => state.t.toFixed(2);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 document.documentElement.style.setProperty("--n", N);
 
@@ -41,9 +40,9 @@ function openUnit(code, scroll) {
 }
 
 function renderControls() {
-  $("thr-value").textContent = state.t === 0.999 ? "0.999" : state.t.toFixed(2);
-  $("thr-hint").textContent = state.t === 0.5 ? "0.5 is the model's setting: the most unit-days right overall." :
-    state.t >= 0.95 ? "Very strict: almost every call is right, but many moves go uncalled." : "Stricter than the model's 0.5: fewer, surer calls.";
+  $("thr-value").textContent = thr();
+  $("thr-hint").textContent = state.t === 0.5 ? "0.50 is the standard setting: a unit is called when a move is more likely than not. It gives the most right answers overall." :
+    state.t >= 0.8 ? "Very strict: only the surest calls remain, and many real moves are missed." : "Stricter than 0.50: fewer calls, more of them right.";
   document.querySelectorAll("#dir button").forEach(b => b.setAttribute("aria-pressed", b.dataset.dir === state.dir));
   document.querySelectorAll("#mode button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === state.mode));
   const days = $("days");
@@ -59,13 +58,13 @@ function renderKpis() {
   const rs = chosen(), c = tally(rs), n = rs.length;
   const flagged = c.hit + c.false, real = c.hit + c.miss;
   $("k-acc").innerHTML = `${show(pct(c.hit + c.quiet, n))}<small>%</small>`;
-  $("k-acc-note").textContent = `${c.hit + c.quiet} of ${n} unit-days called right, moved or quiet`;
+  $("k-acc-note").textContent = `${c.hit + c.quiet} of ${n} right, moved or not`;
   $("k-prec").innerHTML = `${show(pct(c.hit, flagged))}<small>%</small>`;
-  $("k-prec-note").textContent = `${c.hit} of ${flagged} calls were real moves`;
+  $("k-prec-note").textContent = `${c.hit} of ${flagged} calls were followed by a real move`;
   $("k-rec").innerHTML = `${show(pct(c.hit, real))}<small>%</small>`;
-  $("k-rec-note").textContent = `${c.hit} of ${real} real moves were called`;
+  $("k-rec-note").textContent = `${c.hit} of ${real} real moves were called in advance`;
   $("k-count").innerHTML = `${flagged}<small> · ${real}</small>`;
-  $("k-count-note").textContent = state.day < 0 ? `Unit-days over ${N} days` : `Units on ${fmtDay(state.day, true)}`;
+  $("k-count-note").textContent = state.day < 0 ? `Units summed over ${N} days` : `Units on ${fmtDay(state.day, true)}`;
   $("stack").replaceChildren(...Object.keys(OUTCOMES).map(k => { const i = document.createElement("i"); i.style.width = `${100 * c[k] / n}%`; i.style.background = `var(${OUTCOMES[k][1]})`; return i; }));
   $("legend").replaceChildren(...Object.entries(OUTCOMES).map(([k, [label, col]]) => { const s = document.createElement("span");
     s.innerHTML = `<i class="dot" style="background:var(${col})"></i>${label} <b class="num">${c[k]}</b>`; return s; }));
@@ -106,9 +105,9 @@ function buildMap() {
     t.textContent = g.kind === "lon" ? `${Math.abs(g.value)}°${g.value < 0 ? "W" : g.value > 0 ? "E" : ""}` : `${g.value}°N`;
   });
   svgEl("path", { d: MAP.paths.ESP, class: "land-es" }, svg);
+  if (MAP.provinces) svgEl("path", { d: MAP.provinces, class: "province" }, svg);
+  (MAP.province_labels || []).forEach(([name, x, y]) => { svgEl("text", { x, y, class: "province-label", "text-anchor": "middle" }, svg).textContent = name; });
   SEAS.forEach(([name, lat, lon]) => { const [x, y] = proj(lat, lon); svgEl("text", { x, y, class: "sea-label" }, svg).textContent = name.toUpperCase(); });
-  CITIES.forEach(([name, lat, lon]) => { const [x, y] = proj(lat, lon), g = svgEl("g", { class: "city" }, svg);
-    svgEl("circle", { cx: x, cy: y, r: 1.6 }, g); svgEl("text", { x: x + 5, y: y - 4 }, g).textContent = name; });
 
   const sites = {};
   DATA.units.filter(u => u.lat != null).forEach(u => (sites[`${u.lat},${u.lon}`] ||= []).push(u));
@@ -169,11 +168,11 @@ function renderMap() {
     ? techs.filter(t => DATA.units.some(u => u.tech === t)).map(t => [TECH_LIGHTS[t] || "--t-other", `${t} <b class="num">${DATA.units.filter(u => u.tech === t).length}</b>`])
     : state.mode === "forecast"
     ? (state.day >= 0
-      ? [["--n-up", "Called up"], ["--n-down", "Called down"], ["--n-quiet", "Below threshold, dim"]]
+      ? [["--n-up", "Called up"], ["--n-down", "Called down"], ["--n-quiet", "Not called"]]
       : [["--n-up", "Called on some days; brighter and faster for more days"], ["--n-quiet", "Never called"]])
     : (state.day >= 0
       ? [["--n-hit", OUTCOMES.hit[0]], ["--n-miss", OUTCOMES.miss[0]], ["--n-false", OUTCOMES.false[0]], ["--n-quiet", OUTCOMES.quiet[0]]]
-      : [["--n-hit", "Every day right"], ["--n-up", "1–2 days wrong"], ["--n-miss", "3 or more days wrong"], ["--n-quiet", "Never moved or called"]]);
+      : [["--n-hit", "Right every day"], ["--n-up", "Wrong on 1–2 days"], ["--n-miss", "Wrong on 3 or more days"], ["--n-quiet", "Never moved or called"]]);
   $("map-legend").innerHTML = legend.map(([c, t]) => `<span><i class="dot" style="background:var(${c});color:var(${c})"></i>${t}</span>`).join("")
     + (state.mode === "technology" ? `<span>Pulsing: called · dim: not called</span>` : state.day >= 0 && state.mode === "forecast" ? `<span>Brighter and faster for higher probability</span>` : "");
   renderList();
@@ -189,17 +188,17 @@ function renderList() {
     const missed = items.filter(x => x.l.o === "miss").sort((a, b) => b.l.value - a.l.value);
     lit = called.length;
     html = called.map(x => row(x, fmtP(x.l.value), state.mode === "outcome" ? (x.l.o === "hit" ? "moved" : "no move") : (x.l.up === false ? "down" : x.l.up ? "up" : state.dir))).join("")
-      || `<li class="empty">No unit reaches ${state.t} on this day.</li>`;
+      || `<li class="empty">No unit reaches ${thr()} on this day.</li>`;
     if (state.mode === "outcome" && missed.length) html += `<li class="sep">Moved but not called</li>` + missed.map(x => row(x, fmtP(x.l.value), "missed")).join("");
     $("list-title").textContent = `Called · ${fmtDay(state.day, true)}`;
-    $("list-sub").textContent = `${lit} of ${DATA.units.length} units at or above ${state.t}`;
+    $("list-sub").textContent = `${lit} of ${DATA.units.length} units with a chance of ${thr()} or more`;
   } else {
     const called = items.filter(x => x.l.value > 0).sort((a, b) => b.l.value - a.l.value);
     lit = called.length;
     html = called.map(x => row(x, `${x.l.value}/${N}`, state.mode === "outcome" ? `${x.l.c.hit + x.l.c.quiet} right` : "days called")).join("")
-      || `<li class="empty">No unit reaches ${state.t} on any day.</li>`;
+      || `<li class="empty">No unit reaches ${thr()} on any day.</li>`;
     $("list-title").textContent = `Called over ${N} days`;
-    $("list-sub").textContent = `${lit} of ${DATA.units.length} units called at least once at ${state.t}`;
+    $("list-sub").textContent = `${lit} of ${DATA.units.length} units called at least once at ${thr()}`;
   }
   const list = $("list");
   list.innerHTML = html;
@@ -289,7 +288,7 @@ function card(u) {
     el.innerHTML = `<div class="card-top"><div><div class="code">${u.u}</div><div class="name">${esc(u.name)}</div></div>
       <span class="pill ${worst === 0 ? "" : "quiet"}" style="${worst === 0 ? "--state:var(--hit)" : ""}">${c.hit + c.quiet}/${N} right</span></div>
       <div class="track">${rs.map((r, i) => `<i title="${fmtDay(i, true)}: ${OUTCOMES[outcome(r)][0]}" style="background:var(${OUTCOMES[outcome(r)][1]})"></i>`).join("")}</div>
-      <div class="tally num"><span><b style="color:var(--hit)">${c.hit}</b> called</span><span><b style="color:var(--miss)">${c.miss}</b> missed</span><span><b style="color:var(--false)">${c.false}</b> false</span><span>${c.quiet} quiet</span></div>`;
+      <div class="tally num"><span><b style="color:var(--hit)">${c.hit}</b> called</span><span><b style="color:var(--miss)">${c.miss}</b> missed</span><span><b style="color:var(--false)">${c.false}</b> false alarms</span><span>${c.quiet} quiet</span></div>`;
   }
   el.addEventListener("click", () => openUnit(u.u, true));
   el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openUnit(u.u, true); } });
@@ -314,16 +313,16 @@ function renderDetail() {
       s += `<rect x="${x + cw * 0.52}" y="${y(r.hd[h])}" width="${cw * 0.32}" height="${H - B - y(r.hd[h])}" fill="var(--down)" rx="1.5"/>`;
       if (h % 3 === 0) s += `<text x="${x + cw / 2}" y="${H - 8}" text-anchor="middle">${String(h).padStart(2, "0")}</text>`;
     }
-    s += `<line x1="${L}" x2="${W - 8}" y1="${y(state.t)}" y2="${y(state.t)}" stroke="var(--fg)" stroke-dasharray="4 4" stroke-width="1"/><text x="${W - 10}" y="${y(state.t) - 4}" text-anchor="end">threshold ${state.t}</text></svg>`;
-    body = `<div class="legend"><span><i class="dot" style="background:var(--up)"></i>Up probability</span><span><i class="dot" style="background:var(--down)"></i>Down probability</span>
+    s += `<line x1="${L}" x2="${W - 8}" y1="${y(state.t)}" y2="${y(state.t)}" stroke="var(--fg)" stroke-dasharray="4 4" stroke-width="1"/><text x="${W - 10}" y="${y(state.t) - 4}" text-anchor="end">threshold ${thr()}</text></svg>`;
+    body = `<div class="legend"><span><i class="dot" style="background:var(--up)"></i>Chance of moving up</span><span><i class="dot" style="background:var(--down)"></i>Chance of moving down</span>
       <span><i class="dot" style="background:color-mix(in srgb, var(--up) 30%, transparent)"></i>Hours REE moved it up</span><span><i class="dot" style="background:color-mix(in srgb, var(--down) 30%, transparent)"></i>Hours REE moved it down</span></div>
       <div class="svgwrap">${s}</div>
-      <p class="hint num">Moved up ${r.qu} quarter-hours, down ${r.qd}. Highest probability: up ${r.pu.toFixed(3)}, down ${r.pd.toFixed(3)}.</p>`;
+      <p class="hint num">Bars are the model's chance for each hour; shaded hours are when REE really moved the unit. Moved up in ${r.qu} quarter-hours and down in ${r.qd}. Highest chance: up ${r.pu.toFixed(2)}, down ${r.pd.toFixed(2)}.</p>`;
   } else {
     const c = tally(rs);
     body = `<div class="track">${rs.map((r, i) => `<i style="height:34px;background:var(${OUTCOMES[outcome(r)][1]})" title="${fmtDay(i, true)}"></i>`).join("")}</div>
       <div class="hour-axis"><span>${fmtDay(0)}</span><span>${fmtDay(N - 1)}</span></div>
-      <p class="hint num">${c.hit} days moved and called, ${c.miss} missed, ${c.false} called without a move, ${c.quiet} quiet. Pick a day above to see its hours.</p>`;
+      <p class="hint num">${c.hit} days moved as called, ${c.miss} moves missed, ${c.false} false alarms, ${c.quiet} days not moved as expected. Pick a day above to see its hours.</p>`;
   }
   box.innerHTML = `<div class="detail-head"><div><span class="label">${u.tech}</span><h2>${esc(u.name)}<span>${u.u}</span></h2></div>
     <button type="button" class="close" id="detail-close">Close</button></div>${body}`;
