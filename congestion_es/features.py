@@ -11,7 +11,6 @@ KEY = MARKET_KEY + ["unit"]
 CATEGORICAL = ["unit_id", "technology_id"]
 UNIT_COLUMNS = ["unit_id", "technology_id"]
 
-# readable model names for the source columns
 SOURCE_NAMES = {
     "da_price": "day_ahead_price",
     "ida1_price": "intraday1_price",
@@ -75,9 +74,7 @@ def add_generation(frame: pd.DataFrame, unit_quarters: pd.DataFrame | None, unit
 
 
 def routine_rates(moved: dict[str, pd.DataFrame], units: list[str], start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Share of days from start to end each unit was moved in each direction at each hour: by month, weekday or weekend
-    and hour (unit_down_rate_month_hour), and by hour over the whole span (unit_down_rate_hour). moved holds the
-    delivery_date, hour and unit of every moved unit-hour per direction name."""
+    """Share of days each unit was moved per direction and hour, by month and weekend, and by hour alone."""
     days = pd.DataFrame({"delivery_date": pd.date_range(start, end)})
     days["month"], days["is_weekend"] = days["delivery_date"].dt.month, (days["delivery_date"].dt.weekday >= 5).astype(int)
     grid = days.merge(pd.DataFrame({"hour": range(24)}), how="cross").merge(pd.DataFrame({"unit": units}), how="cross")

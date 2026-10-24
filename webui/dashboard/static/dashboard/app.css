@@ -1,6 +1,3 @@
-/* Spain dashboard. Layout: a navy top band with the title, a control rail, the headline figures, the unit map with its list of lit units, a day-by-day chart,
-   then the unit board grouped by technology. Light is the house style: white panels on a soft grey page, navy text, bright blue accents,
-   Lexend for headings and figures and Roboto for text. The map keeps its navy night palette in both themes so the lights read as lights. */
 :root {
   --bg: #f6f5f5; --surface: #ffffff; --raised: #f3f6f9; --line: #dfe5ec; --line-soft: #e9eef3;
   --fg: #003c6e; --text: #2b3440; --muted: #63656a; --faint: #9aa3ad;
@@ -12,7 +9,7 @@
   --body: "Roboto", "Segoe UI", system-ui, sans-serif;
   --mono: "Roboto Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   --shadow: 0 1px 2px rgb(0 60 110 / .05), 0 8px 24px -16px rgb(0 60 110 / .25);
-  /* night map */
+
   --n-sea-1: #062645; --n-sea-2: #021528; --n-other: #04192f; --n-edge: #163a5c;
   --n-coast: rgb(0 150 255 / .6); --n-text: #8fb3d3; --n-fg: #ffffff; --n-line: #12385b;
   --n-up: #4dc3ff; --n-down: #ffb347; --n-hit: #3ddc84; --n-miss: #ff5c6c; --n-false: #b79cff; --n-quiet: #5d7690;
@@ -41,7 +38,6 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .stacked.tight { gap: 8px; }
 .stacked.roomy { gap: 18px; }
 
-/* top band */
 .top { background: linear-gradient(120deg, var(--band) 0%, var(--band-2) 100%); color: var(--band-fg); position: relative; overflow: hidden; }
 .top::after { content: ""; position: absolute; right: -120px; top: -160px; width: 520px; height: 520px; border-radius: 50%;
   background: radial-gradient(circle, rgb(0 150 255 / .35), transparent 65%); pointer-events: none; }
@@ -60,7 +56,6 @@ h1 { margin: 0; font-family: var(--display); font-weight: 500; font-size: clamp(
   border: 1px solid rgb(255 255 255 / .22); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
 .theme:hover { background: rgb(255 255 255 / .16); }
 
-/* control rail */
 .rail { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; min-width: 0; box-shadow: var(--shadow); }
 .label { font: 500 .72rem var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
@@ -86,7 +81,6 @@ button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visib
 .days button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); }
 .days button[aria-pressed="true"] small { color: var(--accent); }
 
-/* KPI */
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: grid; gap: 8px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
 .kpi::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--line); }
@@ -106,7 +100,6 @@ button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visib
 .legend b { color: var(--fg); font-weight: 500; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 
-/* night map */
 .atlas { display: grid; grid-template-columns: minmax(0, 1fr) 300px; border-radius: 14px; overflow: hidden; border: 1px solid var(--n-line);
   background: radial-gradient(120% 90% at 40% 30%, var(--n-sea-1), var(--n-sea-2)); color: var(--n-fg);
   box-shadow: 0 24px 60px -30px rgb(0 30 60 / .55); }
@@ -131,7 +124,6 @@ button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visib
 .map-legend b { color: var(--n-fg); }
 .map-legend .dot { box-shadow: 0 0 8px 1px currentColor; }
 
-/* each unit is a lamp: a soft halo that breathes, a ring that pings when it is called, and a bright core */
 .light { cursor: pointer; outline: none; }
 .light .halo { fill: var(--c); opacity: var(--glow, .1); transform-box: fill-box; transform-origin: center; }
 .light .ring { fill: none; stroke: var(--c); stroke-width: 1.2; opacity: 0; transform-box: fill-box; transform-origin: center; }
@@ -175,7 +167,6 @@ button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visib
 .list .sep { display: block; cursor: default; padding: 14px 10px 4px; font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; color: var(--n-text); }
 .list .sep:hover { background: none; }
 
-/* daily chart */
 .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 h2 { margin: 0; font: 500 1.4rem var(--display); color: var(--fg); letter-spacing: -.01em; }
 .chart { display: grid; grid-template-columns: repeat(var(--n, 14), minmax(0, 1fr)); gap: 8px; align-items: end; height: 190px; margin-top: 14px; }
@@ -189,7 +180,6 @@ h2 { margin: 0; font: 500 1.4rem var(--display); color: var(--fg); letter-spacin
 .bar .lab { font: .68rem var(--mono); color: var(--faint); text-align: center; letter-spacing: .04em; }
 .bar[aria-pressed="true"] .lab { color: var(--accent); font-weight: 500; }
 
-/* board */
 .board { display: grid; gap: 26px; }
 .board-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -225,7 +215,6 @@ h2 { margin: 0; font: 500 1.4rem var(--display); color: var(--fg); letter-spacin
 .tally { display: flex; gap: 14px; font: .78rem var(--mono); color: var(--muted); }
 .tally b { font-weight: 500; }
 
-/* detail */
 .detail { background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 20px 22px; display: grid; gap: 14px; scroll-margin-top: 16px; box-shadow: 0 0 0 4px var(--accent-glow); }
 .detail-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap; }
 .detail-head h2 span { font-family: var(--mono); font-size: .9rem; color: var(--accent); margin-left: 8px; }

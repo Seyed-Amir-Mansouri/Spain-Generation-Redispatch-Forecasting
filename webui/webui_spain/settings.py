@@ -5,7 +5,6 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# the key comes from the environment; without one, a fresh key each start is fine because nothing is signed or stored
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or secrets.token_urlsafe(50)
 DEBUG = os.environ.get("DJANGO_DEBUG") == "1"
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "100.121.87.117"]
@@ -29,6 +28,5 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# the backtest results shown on the page and the country outlines for the map
 RESULTS_FILE = BASE_DIR / "data" / "results.json"
 MAP_FILE = BASE_DIR / "data" / "map.json"

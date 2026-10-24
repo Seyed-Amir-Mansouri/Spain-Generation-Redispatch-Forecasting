@@ -120,7 +120,6 @@ def unit_routine(config: Config, units: pd.DataFrame) -> pd.DataFrame:
         rows, _ = i90.load(config.resolve(config.paths.routine_dir), direction, config.labels.codes[direction])
         rows = rows[rows["delivery_date"].between(config.routine.start, config.routine.end)].assign(unit=lambda f: f["unit"].replace(aliases))
         rows = rows.groupby(["delivery_date", "hour", "unit"], as_index=False)["mwh"].sum()
-        # an hour holds four quarter-hours, so it counts as moved at four times the quarter-hour minimum
         moved[name] = rows[rows["mwh"] >= 4 * config.labels.min_mwh]
     return routine_rates(moved, sorted(units["unit"]), config.routine.start, config.routine.end)
 
@@ -232,8 +231,7 @@ def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, 
 
 
 def backtest(config: Config, units: pd.DataFrame, days: int) -> pd.DataFrame:
-    """Predict each of the last days with published redispatch as a day-ahead prediction would: with its own models,
-    trained on every earlier day. Return the up/down/nothing calls of those days."""
+    """Predict each of the last days with models trained on every earlier day."""
     holdouts = {}
     for direction in DIRECTION_NAMES:
         settings = config.for_direction(direction)
@@ -243,7 +241,6 @@ def backtest(config: Config, units: pd.DataFrame, days: int) -> pd.DataFrame:
         columns = feature_columns(settings)
         common = (settings, inputs.market, inputs.constraints, inputs.units, inputs.weather, inputs.points, inputs.redispatch, inputs.label_days, last)
         extra = {"unit_quarters": inputs.unit_quarters, "unit_days": inputs.unit_days, "schedule": inputs.schedule, "routine": inputs.routine}
-        # the training table is built once with negatives sampled; the test days are built whole for scoring
         training = build_dataset(*common, sample=(settings.model.negative_fraction, settings.model.random_state, last), **extra)
         whole = build_dataset(*common, dates=test_days, **extra)
         scored = []

@@ -1,6 +1,4 @@
-"""Rebuild data/results.json from a rolling backtest table (one row per day, quarter-hour and unit, as the project's backtest saves it).
-Unit names, technologies and places are kept from the current results.json. Needs pandas.
-usage: manage.py build_results PATH_TO_BACKTEST.pkl [--source TEXT]"""
+"""Rebuild data/results.json from a rolling backtest table."""
 import json
 from pathlib import Path
 
@@ -46,5 +44,4 @@ class Command(BaseCommand):
 
 
 def _bits(hours):
-    # one bit per hour in which the unit was moved
     return sum(1 << int(h) for h in set(hours))

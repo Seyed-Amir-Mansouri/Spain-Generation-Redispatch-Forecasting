@@ -116,7 +116,6 @@ def train(
         holdout = test_part[HOLDOUT_COLUMNS].assign(target=test_part["target"].to_numpy(), probability=probability).reset_index(drop=True)
 
     if presampled:
-        # the holdout days were kept whole, so only they are sampled here
         late, late_weights = _sample(test_part, settings.negative_fraction, settings.random_state)
         rows = pd.concat([fit_part, late], ignore_index=True)
         weights = np.concatenate([fit_part["weight"].to_numpy(), late_weights])

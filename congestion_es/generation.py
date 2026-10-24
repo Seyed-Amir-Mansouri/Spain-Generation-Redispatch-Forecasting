@@ -39,10 +39,7 @@ def plant_codes(xml: str) -> pd.DataFrame:
 
 
 def parse(xml: str, plant_units: dict[str, str]) -> pd.DataFrame:
-    """Read an actual-generation-per-unit document into MW per local quarter-hour and programming-unit code.
-
-    From late December 2025 ENTSO-E sends only the plant code, so plant_units maps plant codes to programming-unit codes.
-    """
+    """Read an ENTSO-E generation-per-unit document into MW per quarter-hour and programming unit."""
     rows = []
     for series in _series(xml):
         plant = re.search(r"<PowerSystemResources>\s*<mRID[^>]*>([^<]+)<", series).group(1)
@@ -56,7 +53,6 @@ def parse(xml: str, plant_units: dict[str, str]) -> pd.DataFrame:
             step = pd.Timedelta(minutes=int(re.search(r"<resolution>PT(\d+)M</resolution>", period).group(1)))
             points = {int(p): float(q) for p, q in re.findall(r"<position>(\d+)</position>\s*<quantity>([^<]+)</quantity>", period)}
             value = None
-            # curve type A03: a position is left out when its value repeats the previous one
             for position in range(1, int((end - start) / step) + 1):
                 value = points.get(position, value)
                 if value is not None:
@@ -65,7 +61,6 @@ def parse(xml: str, plant_units: dict[str, str]) -> pd.DataFrame:
     stamps = pd.to_datetime(frame["stamp"], utc=True).dt.tz_convert(TIMEZONE)
     frame["delivery_date"] = stamps.dt.normalize().dt.tz_localize(None)
     frame["period"] = stamps.dt.hour * 4 + stamps.dt.minute // 15
-    # a programming unit can report several plants: average each plant over the quarter, then add the plants up
     frame = frame.groupby(["delivery_date", "period", "eic", "plant"], as_index=False)["mw"].mean()
     return frame.groupby(["delivery_date", "period", "eic"], as_index=False)["mw"].sum()
 
@@ -82,7 +77,6 @@ def fetch(client, days, folder: Path, plant_units: dict[str, str], interval_seco
             stats["cached"] += 1
             continue
         start, end = day.tz_localize(TIMEZONE), (day + pd.Timedelta(days=1)).tz_localize(TIMEZONE)
-        # the query takes at most 24 hours, so the 25-hour day of the October clock change goes in two halves
         spans = [(start, end)] if end - start <= pd.Timedelta(hours=24) else [(start, start + pd.Timedelta(hours=12)), (start + pd.Timedelta(hours=12), end)]
         parts = []
         for first, last in spans:
@@ -109,7 +103,6 @@ def load(folder: Path, eic_units: dict[str, str], units: set[str], start: pd.Tim
     frame = pd.concat([pd.read_csv(path, parse_dates=["delivery_date"]) for path in files], ignore_index=True)
     frame["unit"] = frame["eic"].map(eic_units)
     frame = frame[frame["unit"].isin(units)].groupby(KEY, as_index=False)["mw"].sum()
-    # a few units report hourly: carry each hour's value over its four quarters
     grid = frame[["delivery_date", "unit"]].drop_duplicates().merge(pd.DataFrame({"period": range(96)}), how="cross")
     frame = grid.merge(frame, on=KEY, how="left").sort_values(["unit", "delivery_date", "period"])
     frame["mw"] = frame.groupby(["unit", "delivery_date"])["mw"].ffill(limit=3)
@@ -121,11 +114,7 @@ def _shift(frame: pd.DataFrame, days: int) -> pd.DataFrame:
 
 
 def unit_inputs(output: pd.DataFrame, plant_of: pd.Series, known_until: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Make each delivery day's inputs from output published before a day-ahead prediction:
-    the whole day two days before, and the day before up to quarter known_until.
-
-    Returns the per-quarter inputs and the per-day inputs. A plant is the units sharing plant_of: sisters swap who is redispatched.
-    """
+    """Per-quarter and per-day unit inputs from output published before the day-ahead call."""
     output = output.assign(plant=output["unit"].map(plant_of))
     plant = output.groupby(["delivery_date", "period", "plant"], as_index=False)["mw"].sum().rename(columns={"mw": "plant_gen_2d_mw"})
     quarters = output.merge(plant, on=["delivery_date", "period", "plant"], how="left").rename(columns={"mw": "unit_gen_2d_mw"})

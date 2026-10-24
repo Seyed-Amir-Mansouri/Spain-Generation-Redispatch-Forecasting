@@ -126,7 +126,6 @@ def plant_sources(technology) -> set[str] | None:
     return None
 
 
-# production types grouped for the model, matched in order; unmatched types are "other" and unregistered units "unknown"
 TECHNOLOGY_GROUPS = (
     ("fotovoltaica", "solar_pv"), ("solar termica", "solar_thermal"), ("eolica", "wind"), ("ciclo combinado", "combined_cycle"),
     ("cogeneracion", "cogeneration"), ("hibrida", "hybrid"), ("bombeo", "pumped_hydro"), ("hidraulica", "hydro"),
@@ -274,12 +273,10 @@ def place_match(names, places: pd.DataFrame) -> int | None:
             before = text[:text.index(f" {key} ")].split()
             while before and before[-1] in {"de", "del"}:
                 before = before[:-1]
-            # skip saints and landforms such as "san cristobal" or "pozo de canada"
             if before and before[-1] in QUALIFIERS or key.split()[0] in QUALIFIERS:
                 continue
             hits.add(index)
         last = words[-1]
-        # REE cuts names at 30 characters, so the last word may be a truncated place name
         if len(name.strip()) >= 29 and len(last) >= 6 and last not in PLACE_WORDS:
             hits |= set(places.index[places["key"].str.split().str[0].str.startswith(last) & (places["key"].str.len() > len(last))])
     if not hits:
@@ -645,10 +642,8 @@ def locate_units(
     places: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return coordinates, match method and confidence for every physical unit."""
-    # GEM and regional lists are only used for units the other lists cannot place
     primary = Matcher(reference[~reference["origin"].isin(["gem", "regional"])])
     fallback = Matcher(reference)
-    # a single-plant programming unit often carries the plant's real name
     single = physical.groupby("programming_unit")["code"].transform("size") == 1
     unit_names = {} if programming is None else programming.set_index("code")["name"].to_dict()
     folded = reference["name"].map(fold)
@@ -686,7 +681,6 @@ def locate_units(
             confidence = None if idx is None else ("high" if method == "exact" else "medium")
             renewable = bool({"solar", "wind"} & (plant_sources(unit.technology) or set()))
             fallbacks = []
-            # hydro plants are named after dams and rivers, not villages
             hydro = (plant_sources(unit.technology) or set()) == {"hydro"}
             if places is not None and not hydro:
                 fallbacks.append(("municipality", places, lambda: place_match(names, places)))

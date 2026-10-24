@@ -27,7 +27,6 @@ DOCUMENT = """<GL_MarketDocument>
 def test_parse_fills_left_out_positions_and_adds_plants_up_per_unit():
     frame = generation.parse(DOCUMENT, {"PLANT-A2": "UNIT-A"})
     assert frame["delivery_date"].eq(pd.Timestamp("2026-01-15")).all()
-    # the first local quarters of 15 Jan: 10, repeated 10, then 30, 30; the hourly plant adds 5 at quarter 0
     assert frame.set_index("period")["mw"].to_dict() == {0: 15.0, 1: 10.0, 2: 30.0, 3: 30.0}
     assert set(frame["eic"]) == {"UNIT-A"}
 
@@ -46,13 +45,12 @@ def test_inputs_use_only_output_out_before_a_noon_prediction():
     rows = [(day, period, unit, mw * (i + 1)) for i, day in enumerate(days) for period in range(96)
             for unit, mw in (("A1", 100.0), ("A2", 300.0), ("B", 50.0))]
     output = pd.DataFrame(rows, columns=["delivery_date", "period", "unit", "mw"])
-    # yesterday's afternoon is not out yet: it must not move the yesterday inputs
     output.loc[(output["delivery_date"] == days[1]) & (output["period"] >= 48), "mw"] = 9999.0
     plant_of = pd.Series({"A1": "A", "A2": "A", "B": "B"})
     quarters, daily = generation.unit_inputs(output, plant_of, known_until=48)
 
     q = quarters.set_index(["delivery_date", "period", "unit"])
-    assert q.loc[(days[2], 5, "A1"), "unit_gen_2d_mw"] == 100.0  # 1 Mar shown on 3 Mar
+    assert q.loc[(days[2], 5, "A1"), "unit_gen_2d_mw"] == 100.0
     assert q.loc[(days[2], 5, "A1"), "plant_gen_2d_mw"] == 400.0
 
     d = daily.set_index(["delivery_date", "unit"])

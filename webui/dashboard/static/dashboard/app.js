@@ -1,4 +1,3 @@
-// Spain: one state object, and render functions that redraw each part of the page from it.
 const DATA = JSON.parse(document.getElementById("results-data").textContent);
 const MAP = JSON.parse(document.getElementById("map-data").textContent);
 const STOPS = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 0.999];
@@ -85,7 +84,6 @@ function renderChart() {
   }));
 }
 
-/* ---------- map ---------- */
 const SVGNS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.append(e); return e; };
 const proj = (lat, lon) => { const b = MAP.bounds;
@@ -112,7 +110,6 @@ function buildMap() {
   CITIES.forEach(([name, lat, lon]) => { const [x, y] = proj(lat, lon), g = svgEl("g", { class: "city" }, svg);
     svgEl("circle", { cx: x, cy: y, r: 1.6 }, g); svgEl("text", { x: x + 5, y: y - 4 }, g).textContent = name; });
 
-  // sister units share a site: spread them on a small ring so each light can be seen and picked
   const sites = {};
   DATA.units.filter(u => u.lat != null).forEach(u => (sites[`${u.lat},${u.lon}`] ||= []).push(u));
   const layer = svgEl("g", { class: "lights" }, svg);
@@ -138,7 +135,6 @@ function buildMap() {
   }));
 }
 
-// how each unit is lit: its colour, whether it pulses, how bright, and how fast. Technology view: lit as the forecast, coloured by technology
 function lamp(u, mode = state.mode) {
   if (mode === "technology") { const l = lamp(u, "forecast"); return { ...l, color: TECH_LIGHTS[u.tech] || "--t-other" }; }
   const rs = byUnitDay[u.u];
@@ -215,7 +211,6 @@ function renderList() {
   });
 }
 
-// hovering a light or a list row lights both and shows the unit's card on the map
 function focusUnit(code, tip) {
   Object.entries(lights).forEach(([c, g]) => g.classList.toggle("focus", c === code));
   $("list").querySelectorAll("li[data-u]").forEach(li => li.classList.toggle("focus", li.dataset.u === code));
@@ -241,7 +236,6 @@ function focusUnit(code, tip) {
   box.style.transform = y < 140 ? "translate(-50%, 18px)" : "";
 }
 
-/* ---------- unit board ---------- */
 function hourCells(r) {
   const cells = [];
   for (let h = 0; h < 24; h++) {
@@ -309,7 +303,6 @@ function renderDetail() {
   box.hidden = false;
   let body;
   if (state.day >= 0) {
-    // hourly probability for up and down with the threshold line and the real moves
     const r = rs[state.day], W = 720, H = 200, L = 34, B = 26, T = 12, cw = (W - L - 8) / 24, y = p => T + (1 - p) * (H - T - B);
     let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px" role="img" aria-label="Hourly probabilities">`;
     [0, 0.25, 0.5, 0.75, 1].forEach(v => { s += `<line x1="${L}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${v}</text>`; });
@@ -337,8 +330,6 @@ function renderDetail() {
   $("detail-close").addEventListener("click", () => openUnit(u.u));
 }
 
-/* ---------- theme ---------- */
-// light is the house style; dark is a choice the viewer makes and keeps
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
   $("theme-label").textContent = theme === "dark" ? "Light" : "Dark";
@@ -346,10 +337,10 @@ function setTheme(theme) {
 $("theme").addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   setTheme(next);
-  try { localStorage.setItem("webui-theme", next); } catch (e) { /* storage blocked: the choice lasts for this visit */ }
+  try { localStorage.setItem("webui-theme", next); } catch (e) {}
 });
 let savedTheme = null;
-try { savedTheme = localStorage.getItem("webui-theme"); } catch (e) { /* storage blocked */ }
+try { savedTheme = localStorage.getItem("webui-theme"); } catch (e) {}
 setTheme(savedTheme);
 
 function render() { renderControls(); renderKpis(); renderMap(); renderChart(); renderDetail(); renderBoard(); }

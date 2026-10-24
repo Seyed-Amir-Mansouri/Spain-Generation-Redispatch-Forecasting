@@ -18,33 +18,22 @@ predictions = "outputs/redispatch_decisions.csv"
 validation = "outputs/decision_validation.csv"
 backtest = "outputs/backtest_decisions.csv"
 
-# start is the first day of 15-minute data
 [data]
 start = "2025-10-01"
 
 [esios]
 request_interval_seconds = 6
 
-# a programming unit gets predictions when it was redispatched up or down in at least min_events quarter-hours before the held-out days
-# and, when location_confidence is set, every one of its physical units was located with that confidence,
-# and, when use_list is set, it is in paths.unit_list (the 41 units ENTSO-E reports actual output for)
 [units]
 min_events = 50
 location_confidence = "high"
 use_list = true
 
-# ENTSO-E actual output per unit; inputs use only what is out before a day-ahead prediction at noon:
-# the whole day two days before, and the day before up to quarter known_until_period.
-# A plant is the units of one technology within plant_degrees.
 [generation]
 request_interval_seconds = 6
 known_until_period = 48
 plant_degrees = 0.1
 
-# Open-Meteo weather at the spots of the wind and solar units, averaged over square areas;
-# calls_per_hour keeps requests under Open-Meteo's free limit of 5,000 weighted calls an hour
-# how often each unit was redispatched at each hour from start to end, from REE's hourly files:
-# by month, weekday or weekend and hour, and by hour over the whole span
 [routine]
 start = "2025-05-01"
 end = "2025-09-30"
@@ -61,7 +50,6 @@ directions = ["Bajar", "Subir"]
 min_mwh = 1.25
 settle_days = 90
 
-# I90 restriction codes counted per direction
 [labels.restriction_types]
 Bajar = ["SCB", "SCA", "RTD", "EST", "CEX", "PEV", "COT"]
 Subir = ["SCB", "SCA", "RTD", "COT", "SOT", "RSI", "DAN", "PCB"]
@@ -69,7 +57,6 @@ Subir = ["SCB", "SCA", "RTD", "COT", "SOT", "RSI", "DAN", "PCB"]
 [features]
 use_ida3 = true
 
-# REE e-sios indicator ids
 [constraint_indicators]
 down_overload_base = 1791
 down_overload_contingency = 1793
@@ -85,7 +72,6 @@ up_distribution = 1796
 up_other = 1800
 up_security = 2352
 
-# REE e-sios indicator ids of Spain's day-ahead schedule (PBF) per technology, published the afternoon before delivery
 [schedule_indicators]
 pbf_combined_cycle = 9
 pbf_nuclear = 4
@@ -101,7 +87,6 @@ pbf_import_portugal = 29
 pbf_export_portugal = 33
 pbf_cogeneration = 17
 
-# one LightGBM yes/no model per direction; a unit-quarter is called up or down when that model's probability is the higher one and reaches threshold
 [model]
 test_days = 60
 threshold = 0.5
@@ -115,13 +100,11 @@ random_state = 42
 negative_fraction = 0.25
 recency_half_life_days = 60
 
-# settings that differ per direction
 [model.Bajar]
 cat_smooth = 50
 cat_l2 = 10
 min_data_per_group = 200
 
-# the upward model fits each tree on a random 70% of the rows
 [model.Subir]
 bagging_fraction = 0.7
 

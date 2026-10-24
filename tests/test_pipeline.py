@@ -241,7 +241,6 @@ def test_spain_schedule_joins_the_national_inputs_under_readable_names(config):
 
 
 def test_routine_rates_how_often_a_unit_was_moved_at_each_hour():
-    # 1-7 July 2025: Tuesday to Monday, so five weekdays and two weekend days
     moved = {
         "down": pd.DataFrame({"delivery_date": pd.to_datetime(["2025-07-01", "2025-07-02", "2025-07-05"]), "hour": 20, "unit": "SAGU1"}),
         "up": pd.DataFrame({"delivery_date": pd.to_datetime(["2025-07-01"]), "hour": 3, "unit": "PALOS2"}),
