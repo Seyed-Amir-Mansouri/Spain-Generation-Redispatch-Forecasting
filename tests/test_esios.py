@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from congestion_es import esios, market
+from redispatch_es import esios, market
 
 
 class FakeResponse(io.BytesIO):

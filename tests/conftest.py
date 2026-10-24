@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from congestion_es.config import DEFAULT_CONFIG, load_config
+from redispatch_es.config import DEFAULT_CONFIG, load_config
 
 
 @pytest.fixture

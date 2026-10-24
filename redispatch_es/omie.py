@@ -41,7 +41,7 @@ def parse(text: str, day: date) -> pd.DataFrame:
 
 def _download(day: date, session: int, opener=urllib.request.urlopen, sleep=time.sleep, attempts: int = 4) -> str | None:
     """Fetch one session file, retrying temporary failures; None only when OMIE has no such file."""
-    request = urllib.request.Request(URL.format(day=day, session=session), headers={"User-Agent": "grid-congestion"})
+    request = urllib.request.Request(URL.format(day=day, session=session), headers={"User-Agent": "redispatch-es"})
     for attempt in range(attempts):
         try:
             with opener(request, timeout=60) as response:

@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "congestion_es"
+name = "redispatch_es"
 version = "0.1.0"
 description = "Day-ahead up, down or no redispatch per programming unit in the Spanish peninsular grid"
 requires-python = ">=3.11"
@@ -21,10 +21,10 @@ dependencies = [
 test = ["pytest>=8"]
 
 [project.scripts]
-congestion-es = "congestion_es.cli:main"
+redispatch-es = "redispatch_es.cli:main"
 
 [tool.setuptools]
-packages = ["congestion_es"]
+packages = ["redispatch_es"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

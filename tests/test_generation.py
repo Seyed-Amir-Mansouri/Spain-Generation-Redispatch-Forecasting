@@ -1,6 +1,6 @@
 import pandas as pd
 
-from congestion_es import generation
+from redispatch_es import generation
 
 DOCUMENT = """<GL_MarketDocument>
   <TimeSeries>

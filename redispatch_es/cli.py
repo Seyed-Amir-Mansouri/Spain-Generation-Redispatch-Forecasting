@@ -218,7 +218,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     """Create the argument parser with one subcommand per workflow step."""
-    parser = argparse.ArgumentParser(prog="congestion-es")
+    parser = argparse.ArgumentParser(prog="redispatch-es")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="path to config.toml")
     sub = parser.add_subparsers(dest="command", required=True)
 

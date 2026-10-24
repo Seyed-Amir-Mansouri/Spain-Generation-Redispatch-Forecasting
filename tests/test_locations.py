@@ -1,6 +1,6 @@
 import pandas as pd
 
-from congestion_es import locations
+from redispatch_es import locations
 
 
 def _reference(rows):

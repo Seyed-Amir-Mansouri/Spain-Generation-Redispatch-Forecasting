@@ -58,7 +58,7 @@ def _request(url: str, params: dict, opener=urllib.request.urlopen, sleep=time.s
     full = url + "?" + urllib.parse.urlencode(params)
     for attempt in range(attempts):
         try:
-            with opener(urllib.request.Request(full, headers={"User-Agent": "grid-congestion"}), timeout=300) as response:
+            with opener(urllib.request.Request(full, headers={"User-Agent": "redispatch-es"}), timeout=300) as response:
                 data = json.loads(response.read())
             return data if isinstance(data, list) else [data]
         except urllib.error.HTTPError as error:

@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from congestion_es import market, omie
+from redispatch_es import market, omie
 
 
 def _file(rows):

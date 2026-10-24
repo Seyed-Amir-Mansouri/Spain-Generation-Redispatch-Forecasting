@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from congestion_es import i90
+from redispatch_es import i90
 
 
 def test_period_slots_number_quarters_of_the_local_day():

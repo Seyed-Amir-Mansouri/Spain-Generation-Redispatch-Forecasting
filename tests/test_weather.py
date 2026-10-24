@@ -1,7 +1,7 @@
 import pandas as pd
 
-from congestion_es import weather
-from congestion_es.features import add_weather
+from redispatch_es import weather
+from redispatch_es.features import add_weather
 
 
 def test_units_get_the_average_weather_of_the_spots_in_their_area():

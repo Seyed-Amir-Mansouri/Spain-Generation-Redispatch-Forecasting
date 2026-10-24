@@ -92,18 +92,18 @@ Two free API keys are read from environment variables and are never written to f
 ## Commands
 
 ```
-congestion-es fetch-units
-congestion-es fetch-market --start 2025-10-01 --end 2026-10-16
-congestion-es fetch-intraday --start 2025-10-01 --end 2026-10-16
-congestion-es fetch-constraints --start 2025-10-01 --end 2026-10-16
-congestion-es fetch-schedule --start 2025-10-01 --end 2026-10-16
-congestion-es fetch-weather --start 2025-10-01 --end 2026-10-16
-congestion-es fetch-generation --start 2025-09-29 --end 2026-10-22
-congestion-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
-congestion-es train
-congestion-es backtest --days 14
-congestion-es predict --date 2026-10-15
-congestion-es validate
+redispatch-es fetch-units
+redispatch-es fetch-market --start 2025-10-01 --end 2026-10-16
+redispatch-es fetch-intraday --start 2025-10-01 --end 2026-10-16
+redispatch-es fetch-constraints --start 2025-10-01 --end 2026-10-16
+redispatch-es fetch-schedule --start 2025-10-01 --end 2026-10-16
+redispatch-es fetch-weather --start 2025-10-01 --end 2026-10-16
+redispatch-es fetch-generation --start 2025-09-29 --end 2026-10-22
+redispatch-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
+redispatch-es train
+redispatch-es backtest --days 14
+redispatch-es predict --date 2026-10-15
+redispatch-es validate
 ```
 
 `--end` is the day after the last delivery date. To predict a new day, fetch the market, intraday, constraint, schedule and weather data for that day and the unit output for the two days before it, then run `predict`. Requests to REE are spaced out, because REE briefly blocks clients that send rapid requests.
@@ -117,7 +117,7 @@ congestion-es validate
 ```
 config.toml          paths, unit selection, label rule, data sources and model settings
 reference/           hand-checked plant locations, renamed unit codes, the 41 units and their ENTSO-E plant codes
-congestion_es/       the package: data download, unit locations, inputs, models, backtest, prediction and validation
+redispatch_es/       the package: data download, unit locations, inputs, models, backtest, prediction and validation
 tests/               tests on synthetic data
 webui/               the dashboard
 data/ models/ outputs/   local files, not tracked

@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from congestion_es import estimator, ledger, locations, metrics, pipeline, validate, weather
-from congestion_es.config import DEFAULT_CONFIG, load_config
-from congestion_es.features import feature_columns, routine_rates
+from redispatch_es import estimator, ledger, locations, metrics, pipeline, validate, weather
+from redispatch_es.config import DEFAULT_CONFIG, load_config
+from redispatch_es.features import feature_columns, routine_rates
 
 UNITS = ["EOLA", "FVB", "CCGC"]
 
@@ -222,7 +222,7 @@ def test_listed_units_keeps_only_the_units_in_the_list_when_it_is_on(config, tmp
 
 
 def test_train_takes_the_number_of_test_days_from_the_command_line():
-    from congestion_es import cli
+    from redispatch_es import cli
 
     args = cli.build_parser().parse_args(["train", "--test-days", "1"])
     assert args.test_days == 1 and args.func is cli.cmd_train

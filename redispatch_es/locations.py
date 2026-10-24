@@ -193,7 +193,7 @@ def load_registry(folder: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 def download_plants(folder: Path) -> None:
     """Save the OpenStreetMap power plants around Iberia and the OPSD conventional plant list."""
     folder.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(OPSD_URL, headers={"User-Agent": "grid-congestion"})
+    request = urllib.request.Request(OPSD_URL, headers={"User-Agent": "redispatch-es"})
     with urllib.request.urlopen(request, timeout=300) as response:
         (folder / "opsd_conventional_power_plants.csv").write_bytes(response.read())
 
@@ -206,7 +206,7 @@ def _overpass(query: str, target: Path) -> None:
     payload = urllib.parse.urlencode({"data": query}).encode()
     last_error = None
     for url in OVERPASS_URLS:
-        request = urllib.request.Request(url, data=payload, headers={"User-Agent": "grid-congestion"})
+        request = urllib.request.Request(url, data=payload, headers={"User-Agent": "redispatch-es"})
         try:
             with urllib.request.urlopen(request, timeout=400) as response:
                 target.write_bytes(response.read())
@@ -325,7 +325,7 @@ def _gem_call(params: dict, sleep=time.sleep) -> dict:
     url = GEM_API + "?" + urllib.parse.urlencode(params)
     for attempt in range(5):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "grid-congestion"}), timeout=120) as response:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "redispatch-es"}), timeout=120) as response:
                 return json.loads(response.read())
         except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError):
             if attempt == 4:
@@ -407,7 +407,7 @@ def _gpkg_centre(blob: bytes) -> tuple[float, float] | None:
 
 def download_cyl(folder: Path) -> None:
     """Save Castilla y León's official solar and wind installation areas (©Junta de Castilla y León) with their centres."""
-    request = urllib.request.Request(CYL_URL, headers={"User-Agent": "grid-congestion"})
+    request = urllib.request.Request(CYL_URL, headers={"User-Agent": "redispatch-es"})
     with urllib.request.urlopen(request, timeout=300) as response:
         archive = zipfile.ZipFile(io.BytesIO(response.read()))
     member = next(name for name in archive.namelist() if name.endswith(".gpkg"))
@@ -468,7 +468,7 @@ def _shp_centres(data: bytes) -> list[tuple[float, float] | None]:
 
 def download_aragon(folder: Path) -> None:
     """Save Aragón's official wind farm and solar plant outlines (Gobierno de Aragón, ICEARAGON) with their centres."""
-    request = urllib.request.Request(ARAGON_URL, headers={"User-Agent": "grid-congestion"})
+    request = urllib.request.Request(ARAGON_URL, headers={"User-Agent": "redispatch-es"})
     with urllib.request.urlopen(request, timeout=600) as response:
         archive = zipfile.ZipFile(io.BytesIO(response.read()))
     members = {Path(name).name: name for name in archive.namelist()}
