@@ -1,0 +1,129 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Day-ahead forecast of which Spanish generating units REE will redispatch, with its rolling backtest results.">
+  <title>Spain</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230096ff'/%3E%3Cpath d='M8 21l5-6 4 3 7-9' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="{% static 'dashboard/app.css' %}">
+</head>
+<body>
+<header class="top">
+  <div class="top-bar">
+    <div class="mark"><svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0096ff"/><path d="M8 21l5-6 4 3 7-9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>Spain</b></span></div>
+    <button type="button" class="theme" id="theme" aria-label="Switch light or dark theme">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
+      <span id="theme-label">Dark</span>
+    </button>
+  </div>
+  <div class="mast">
+    <div class="brand">
+      <div class="eyebrow">Day-ahead redispatch forecast · Phase I technical constraints</div>
+      <h1>Spain</h1>
+      <p class="lede">Which of the 41 programming units will Spain's system operator move up or down tomorrow, called before noon the day before from public data only.</p>
+    </div>
+    <div class="stamp num">
+      <span>Test window <b id="window"></b></span>
+      <span>Units <b id="unit-count"></b> · each day trained on every earlier day</span>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+
+  <section class="rail" aria-label="Settings">
+    <div class="panel thr">
+      <div class="thr-head">
+        <span class="label">Call threshold</span>
+        <span class="thr-value num" id="thr-value">0.50</span>
+      </div>
+      <input type="range" id="thr" min="0" max="7" step="1" value="0" aria-label="Call threshold">
+      <div class="ticks"><span>0.5</span><span>0.6</span><span>0.7</span><span>0.8</span><span>0.9</span><span>0.95</span><span>0.99</span><span>0.999</span></div>
+      <p class="hint" id="thr-hint"></p>
+    </div>
+    <div class="panel stacked">
+      <div class="row"><span class="label">Direction</span>
+        <div class="seg" id="dir" role="group" aria-label="Direction">
+          <button type="button" data-dir="any" aria-pressed="true">Up or down</button>
+          <button type="button" data-dir="up" aria-pressed="false">Up</button>
+          <button type="button" data-dir="down" aria-pressed="false">Down</button>
+        </div>
+      </div>
+      <div class="stacked tight"><span class="label">Delivery day</span>
+        <div class="days" id="days" role="group" aria-label="Delivery day"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="kpis" aria-label="Results">
+    <div class="kpi lead"><span class="label">All right</span><div class="fig num" id="k-acc"></div><p id="k-acc-note"></p></div>
+    <div class="kpi"><span class="label">Precision</span><div class="fig num" id="k-prec"></div><p id="k-prec-note"></p></div>
+    <div class="kpi"><span class="label">Recall</span><div class="fig num" id="k-rec"></div><p id="k-rec-note"></p></div>
+    <div class="kpi"><span class="label">Flagged · moved</span><div class="fig num" id="k-count"></div><p id="k-count-note"></p></div>
+  </section>
+
+  <section class="panel ledger" aria-label="Outcome mix">
+    <div class="stack" id="stack"></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section class="atlas" aria-label="Map of the units">
+    <div class="atlas-map">
+      <div class="atlas-head">
+        <div><span class="label accent">Unit map</span><h2 id="map-title">Units on the map</h2></div>
+        <div class="seg dark" id="mode" role="group" aria-label="Light colour">
+          <button type="button" data-mode="forecast" aria-pressed="true">Forecast</button>
+          <button type="button" data-mode="outcome" aria-pressed="false">Outcome</button>
+          <button type="button" data-mode="technology" aria-pressed="false">Technology</button>
+        </div>
+      </div>
+      <div class="mapbox" id="mapbox">
+        <svg id="map" role="img" aria-label="Map of Spain with each unit as a light"></svg>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <div class="legend map-legend" id="map-legend"></div>
+    </div>
+    <aside class="atlas-list">
+      <div class="list-head"><span class="label accent" id="list-title"></span><span class="list-sub" id="list-sub"></span></div>
+      <ol class="list" id="list"></ol>
+    </aside>
+  </section>
+
+  <section class="panel">
+    <div class="chart-head">
+      <h2>Day by day</h2>
+      <span class="label">Share of units called right · tap a day</span>
+    </div>
+    <div class="chart" id="chart"></div>
+  </section>
+
+  <section id="detail" class="detail" hidden></section>
+
+  <section class="stacked roomy">
+    <div class="board-head">
+      <h2 id="board-title">Units</h2>
+      <div class="row">
+        <div class="filters" id="filters" role="group" aria-label="Show units"></div>
+        <input class="search" id="search" type="search" placeholder="Find a unit" aria-label="Find a unit">
+      </div>
+    </div>
+    <div class="legend" id="hour-legend"></div>
+    <div id="board" class="board"></div>
+  </section>
+
+  <footer class="foot">
+    <span id="source"></span>
+    <span>A unit counts as moved on a day when REE redispatched it by at least 1.25 MWh in any quarter-hour (Phase I, technical constraints). It is called when its highest probability of the day reaches the threshold. Inputs: prices, Spain's forecasts and day-ahead schedule, REE's Phase I totals, weather, each unit's recent ENTSO-E output and its sister units, and last summer's routine.</span>
+    <span>Map: each light is a unit at its plant; sister units at one site sit in a small ring. Outlines from Natural Earth.</span>
+  </footer>
+</div>
+
+{{ results|json_script:"results-data" }}
+{{ outline|json_script:"map-data" }}
+<script src="{% static 'dashboard/app.js' %}"></script>
+</body>
+</html>
