@@ -105,18 +105,39 @@ function buildMap() {
     const t = svgEl("text", g.kind === "lon" ? { x: g.a[0] + 4, y: MAP.height - 8, class: "grat-label" } : { x: 6, y: g.a[1] - 4, class: "grat-label" }, svg);
     t.textContent = g.kind === "lon" ? `${Math.abs(g.value)}°${g.value < 0 ? "W" : g.value > 0 ? "E" : ""}` : `${g.value}°N`;
   });
-  svgEl("path", { d: MAP.paths.ESP, class: "land-es" }, svg);
+  const spain = svgEl("path", { d: MAP.paths.ESP, class: "land-es" }, svg);
   if (MAP.provinces) svgEl("path", { d: MAP.provinces, class: "province" }, svg);
   (MAP.province_labels || []).forEach(([name, x, y]) => { svgEl("text", { x, y, class: "province-label", "text-anchor": "middle" }, svg).textContent = name; });
   SEAS.forEach(([name, lat, lon]) => { const [x, y] = proj(lat, lon); svgEl("text", { x, y, class: "sea-label" }, svg).textContent = name.toUpperCase(); });
 
-  const sites = {};
-  DATA.units.filter(u => u.lat != null).forEach(u => (sites[`${u.lat},${u.lon}`] ||= []).push(u));
+  const sites = [];
+  DATA.units.filter(u => u.lat != null).forEach(u => {
+    const [x, y] = proj(u.lat, u.lon), near = sites.find(s => Math.hypot(s.x - x, s.y - y) < 10);
+    if (near) near.units.push(u); else sites.push({ x, y, units: [u] });
+  });
   const layer = svgEl("g", { class: "lights" }, svg);
+  const pt = svg.createSVGPoint();
+  const land = (x, y) => [[0, 0], [5, 0], [-5, 0], [0, 5], [0, -5], [3.5, 3.5], [-3.5, 3.5], [3.5, -3.5], [-3.5, -3.5]].every(([dx, dy]) => { pt.x = x + dx; pt.y = y + dy; return spain.isPointInFill(pt); });
+  const inland = (x, y) => {
+    if (land(x, y)) return [x, y];
+    for (let r = 1; r <= 20; r++) for (let a = 0; a < 24; a++) {
+      const nx = x + r * Math.cos(a * Math.PI / 12), ny = y + r * Math.sin(a * Math.PI / 12);
+      if (land(nx, ny)) return [nx, ny];
+    }
+    return [x, y];
+  };
+  const spots = site => {
+    const n = site.units.length, [cx, cy] = inland(site.x, site.y);
+    if (n === 1) return [[cx, cy]];
+    const r = 6 + 2 * n;
+    const ring = turn => site.units.map((_, i) => { const a = turn - Math.PI / 2 + 2 * Math.PI * i / n; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
+    let best = ring(0), most = -1;
+    for (let s = 0; s < 24; s++) { const c = ring(s * Math.PI / 12), n = c.filter(p => land(...p)).length; if (n > most) { most = n; best = c; } }
+    return best.map(p => inland(...p));
+  };
   let k = 0;
-  Object.values(sites).forEach(group => group.forEach((u, i) => {
-    let [x, y] = proj(u.lat, u.lon);
-    if (group.length > 1) { const a = -Math.PI / 2 + 2 * Math.PI * i / group.length, r = 6 + 2 * group.length; x += r * Math.cos(a); y += r * Math.sin(a); }
+  sites.forEach(site => { const at = spots(site); site.units.forEach((u, i) => {
+    const [x, y] = at[i];
     const g = svgEl("g", { class: "light", transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})`, tabindex: 0, role: "button", "aria-label": `${u.u}, ${u.name}` }, layer);
     g.style.setProperty("--delay", `${(-(k++ * 0.37) % 3).toFixed(2)}s`);
     svgEl("circle", { class: "halo", r: 13, filter: "url(#soft)" }, g);
@@ -132,7 +153,7 @@ function buildMap() {
     g.addEventListener("click", () => openUnit(u.u, true));
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openUnit(u.u, true); } });
     lights[u.u] = g;
-  }));
+  }); });
 }
 
 function lamp(u, mode = state.mode) {
