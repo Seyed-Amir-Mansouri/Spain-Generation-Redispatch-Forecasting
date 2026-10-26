@@ -1,0 +1,81 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+{% block title %}Forecast · Spain{% endblock %}
+{% block mast %}
+    <div class="brand">
+      <div class="eyebrow">Forecast new days</div>
+      <h1>Forecast</h1>
+      <p class="lede">Pick the delivery days you want to forecast. The tool lists the input data those days need, downloads only what is not on disk yet, and then calls each of the 41 units upward, downward or not redispatched for every hour of the day.</p>
+    </div>
+{% endblock %}
+
+{% block content %}
+  <section class="panel step" aria-labelledby="pick-title">
+    <div class="step-head"><span class="step-num">1</span>
+      <div><h2 id="pick-title">Pick the delivery days</h2>
+        <p class="explain">Choose up to 14 delivery days, anywhere from 1 January 2026 up to tomorrow. Data up to 17 July 2026 is already on disk; later days are downloaded when you ask for them. A day's forecast uses data published before and on that day: the day-ahead market price and forecasts, REE's day-ahead schedule and Phase I totals, the intraday auctions (IDA3 clears on the delivery day itself), the weather forecast, and each unit's actual output on the two days before.</p></div>
+    </div>
+    <form class="pick" id="pick">
+      <label><span class="label">First day</span><input type="date" id="first" required></label>
+      <label><span class="label">Last day</span><input type="date" id="last" required></label>
+      <button type="submit" class="btn primary" id="check">Check the data</button>
+    </form>
+    <p class="hint" id="pick-note" role="status"></p>
+  </section>
+
+  <section class="panel step" id="data-step" aria-labelledby="data-title" hidden>
+    <div class="step-head"><span class="step-num">2</span>
+      <div><h2 id="data-title">Data needed</h2>
+        <p class="explain" id="data-intro"></p></div>
+    </div>
+    <div class="tl-wrap">
+      <div class="tl-top"><h3 id="tl-title"></h3></div>
+      <p class="explain">Each marker is the time a source normally publishes that input. The thin grey line runs through the whole period; the thicker grey bar is the period the data describes: the delivery day for market, grid and weather data, and the days before for the units' actual output. A forecast can only be issued once every marker is green.</p>
+      <div class="tl" id="timeline"></div>
+      <p class="explain" id="tl-note"></p>
+    </div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--hit)"></i>On disk</span>
+      <span><i class="dot" style="background:var(--up)"></i>Published, ready to download</span>
+      <span><i class="dot" style="background:var(--warn)"></i>Due, but late at the source</span>
+      <span><i class="dot hollow"></i>Not published yet</span>
+      <span><i class="dot" style="background:var(--false)"></i>Final, with gaps at the source</span>
+    </div>
+    <div class="needs" id="needs"></div>
+    <div class="row">
+      <button type="button" class="btn primary" id="download">Download</button>
+      <span class="hint" id="folder"></span>
+    </div>
+  </section>
+
+  <section class="panel step" id="job" aria-labelledby="job-title" hidden>
+    <div class="job-head"><h2 id="job-title"></h2><span class="pill" id="job-status"></span></div>
+    <ol class="job-steps" id="job-steps"></ol>
+    <details class="job-details"><summary>Show the log</summary><pre class="job-log" id="job-log"></pre></details>
+  </section>
+
+  <section class="panel step" id="run-step" aria-labelledby="run-title" hidden>
+    <div class="step-head"><span class="step-num">3</span>
+      <div><h2 id="run-title">Run the forecast</h2>
+        <div class="explain" id="run-intro"></div></div>
+    </div>
+    <div class="model" id="model"></div>
+    <div class="row">
+      <button type="button" class="btn primary" id="run">Run the forecast</button>
+      <button type="button" class="btn" id="train" hidden>Retrain the models</button>
+    </div>
+  </section>
+
+  <section class="stacked roomy" id="results" aria-labelledby="results-title" hidden>
+    <div class="board-head"><h2 id="results-title">Forecast</h2></div>
+    <p class="explain">For each delivery day, the units the model calls for redispatch, with the hours it expects REE to move them: blue for upward, orange for downward. A unit is called in an hour when its probability reaches 0.50 in any quarter-hour of that hour. The remaining units are expected to keep their day-ahead schedule.</p>
+    <div class="legend"><span><i class="dot" style="background:var(--up)"></i>Hour called upward</span><span><i class="dot" style="background:var(--down)"></i>Hour called downward</span></div>
+    <div id="result-days" class="board"></div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+{{ units|json_script:"units-data" }}
+{{ limits|json_script:"limits-data" }}
+<script src="{% static 'dashboard/forecast.js' %}"></script>
+{% endblock %}

@@ -1,6 +1,7 @@
-"""Settings for the Spain dashboard: a read-only dashboard, so no database, sessions or logins."""
+"""Settings for the Spain dashboard: no database, sessions or logins; forecasts run the redispatch_es pipeline."""
 import os
 import secrets
+import shutil
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,6 +14,7 @@ INSTALLED_APPS = ["django.contrib.staticfiles", "dashboard"]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 ROOT_URLCONF = "webui_spain.urls"
@@ -30,3 +32,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 RESULTS_FILE = BASE_DIR / "data" / "results.json"
 MAP_FILE = BASE_DIR / "data" / "map.json"
+
+PROJECT_DIR = BASE_DIR.parent
+JOB_DIR = PROJECT_DIR / "data" / "webui"
+if os.environ.get("PIPELINE_PYTHON"):
+    PIPELINE_PYTHON = [os.environ["PIPELINE_PYTHON"]]
+elif shutil.which("py"):
+    PIPELINE_PYTHON = ["py", "-3"]
+else:
+    PIPELINE_PYTHON = ["python"]

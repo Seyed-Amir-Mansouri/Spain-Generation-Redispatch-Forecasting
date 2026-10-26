@@ -1,23 +1,7 @@
-{% load static %}<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Day-ahead forecast of which Spanish generating units REE will redispatch, with its rolling backtest results.">
-  <title>Spain</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230096ff'/%3E%3Cpath d='M8 21l5-6 4 3 7-9' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="{% static 'dashboard/app.css' %}">
-</head>
-<body>
-<header class="top">
-  <div class="top-bar">
-    <div class="mark"><svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0096ff"/><path d="M8 21l5-6 4 3 7-9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span><b>Spain</b></span></div>
-  </div>
-  <div class="mast">
+{% extends "dashboard/base.html" %}
+{% load static %}
+{% block title %}Validation · Spain{% endblock %}
+{% block mast %}
     <div class="brand">
       <div class="eyebrow">Grid redispatch forecast</div>
       <h1>Spain</h1>
@@ -27,9 +11,9 @@
       <span>Days checked <b id="window"></b></span>
       <span><b id="unit-count"></b> generating units · outcomes from REE's published redispatch</span>
     </div>
-  </div>
-</header>
-<div class="wrap">
+{% endblock %}
+
+{% block content %}
 
   <section class="rail" aria-label="Settings">
     <div class="panel thr">
@@ -128,10 +112,10 @@
     <div id="board" class="board"></div>
   </section>
 
-</div>
+{% endblock %}
 
+{% block scripts %}
 {{ results|json_script:"results-data" }}
 {{ outline|json_script:"map-data" }}
 <script src="{% static 'dashboard/app.js' %}"></script>
-</body>
-</html>
+{% endblock %}

@@ -5,11 +5,12 @@ import dataclasses
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import esios, estimator, generation, i90, ledger, locations, market, metrics, omie, pipeline, validate, weather
+from . import esios, estimator, generation, i90, inventory, ledger, locations, market, metrics, omie, pipeline, validate, weather
 from .config import DEFAULT_CONFIG, Config, load_config
 
 
@@ -60,33 +61,34 @@ def cmd_fetch_units(args: argparse.Namespace) -> None:
     print(f"located {generating['lat'].notna().sum()} of {len(generating)} generating units, {share:.1%} of their capacity")
 
 
-def cmd_fetch_market(args: argparse.Namespace) -> None:
+def _days(start: pd.Timestamp, end: pd.Timestamp) -> list[pd.Timestamp]:
+    """List the delivery days from start up to the exclusive end."""
+    return list(pd.date_range(start, end - pd.Timedelta(days=1), freq="D"))
+
+
+def fetch_market(config: Config, start: pd.Timestamp, end: pd.Timestamp) -> None:
     """Fetch quarter-hour ENTSO-E day-ahead prices and national forecasts."""
-    config = load_config(args.config)
-    prices = market.fetch_market(market.build_client(_key("ENTSOE_API_KEY")), _date(args.start), _date(args.end))
+    prices = market.fetch_market(market.build_client(_key("ENTSOE_API_KEY")), start, end)
     frame = market.upsert(config.resolve(config.paths.market), prices)
     print(f"market: {len(prices)} new rows, {len(frame)} total")
 
 
-def cmd_fetch_intraday(args: argparse.Namespace) -> None:
+def fetch_intraday(config: Config, start: pd.Timestamp, end: pd.Timestamp) -> None:
     """Fetch quarter-hour Spanish IDA1-3 prices from OMIE and merge them into the market file."""
-    config = load_config(args.config)
-    days = [d.date() for d in pd.date_range(_date(args.start), _date(args.end) - pd.Timedelta(days=1), freq="D")]
-    prices = omie.fetch_intraday(days)
+    prices = omie.fetch_intraday([d.date() for d in _days(start, end)])
     target = config.resolve(config.paths.market)
     target.parent.mkdir(parents=True, exist_ok=True)
-    prices.to_csv(target.with_name(f"intraday_{args.start}_{args.end}.csv"), index=False)
+    prices.to_csv(target.with_name(f"intraday_{start:%Y-%m-%d}_{end:%Y-%m-%d}.csv"), index=False)
     frame = market.upsert(target, prices)
     print(f"intraday: {len(prices)} new rows, {len(frame)} total")
 
 
-def cmd_fetch_weather(args: argparse.Namespace) -> None:
+def fetch_weather(config: Config, start: pd.Timestamp, end: pd.Timestamp, units: pd.DataFrame | None = None) -> None:
     """Fetch Open-Meteo forecasts at the spots of the predicted wind and solar units, at quarter-hours."""
-    config = load_config(args.config)
-    centres = pipeline.weather_spots(config, pipeline.select_units(config))
+    centres = pipeline.weather_spots(config, pipeline.select_units(config) if units is None else units)
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     frame = weather.fetch(
-        centres, _date(args.start), _date(args.end), today,
+        centres, start, end, today,
         per_request=config.weather.points_per_request,
         interval_seconds=config.weather.request_interval_seconds,
         calls_per_hour=config.weather.calls_per_hour,
@@ -95,32 +97,113 @@ def cmd_fetch_weather(args: argparse.Namespace) -> None:
     print(f"weather: {len(centres)} points, {len(frame)} new rows, {len(merged)} total")
 
 
-def cmd_fetch_constraints(args: argparse.Namespace) -> None:
+def fetch_constraints(config: Config, start: pd.Timestamp, end: pd.Timestamp) -> None:
     """Fetch REE's national day-ahead constraint totals per quarter-hour."""
-    config = load_config(args.config)
-    totals = market.fetch_constraints(_esios(config), config.constraint_indicators, _date(args.start), _date(args.end))
+    totals = market.fetch_constraints(_esios(config), config.constraint_indicators, start, end)
     frame = market.upsert(config.resolve(config.paths.constraints), totals)
     print(f"constraints: {len(totals)} new rows, {len(frame)} total")
 
 
-def cmd_fetch_generation(args: argparse.Namespace) -> None:
+def fetch_generation(config: Config, start: pd.Timestamp, end: pd.Timestamp) -> None:
     """Download ENTSO-E actual output per unit, one file per delivery day, skipping cached days."""
-    config = load_config(args.config)
     plants = pd.read_csv(config.resolve(config.paths.generation_plants))
-    days = pd.date_range(_date(args.start), _date(args.end) - pd.Timedelta(days=1), freq="D")
     stats = generation.fetch(
-        generation.build_client(_key("ENTSOE_API_KEY")), days, config.resolve(config.paths.generation_dir),
+        generation.build_client(_key("ENTSOE_API_KEY")), _days(start, end), config.resolve(config.paths.generation_dir),
         dict(zip(plants["plant_eic"], plants["eic"])), config.generation.request_interval_seconds,
     )
-    print(json.dumps(stats))
+    print(f"generation: {json.dumps(stats)}")
 
 
-def cmd_fetch_schedule(args: argparse.Namespace) -> None:
+def fetch_schedule(config: Config, start: pd.Timestamp, end: pd.Timestamp) -> None:
     """Fetch REE's national day-ahead schedule per technology per quarter-hour."""
-    config = load_config(args.config)
-    schedule = market.fetch_constraints(_esios(config), config.schedule_indicators, _date(args.start), _date(args.end))
+    schedule = market.fetch_constraints(_esios(config), config.schedule_indicators, start, end)
     frame = market.upsert(config.resolve(config.paths.schedule), schedule)
     print(f"schedule: {len(schedule)} new rows, {len(frame)} total")
+
+
+def _range_command(fetch):
+    def command(args: argparse.Namespace) -> None:
+        fetch(load_config(args.config), _date(args.start), _date(args.end))
+    command.__doc__ = fetch.__doc__
+    return command
+
+
+cmd_fetch_market = _range_command(fetch_market)
+cmd_fetch_intraday = _range_command(fetch_intraday)
+cmd_fetch_weather = _range_command(fetch_weather)
+cmd_fetch_constraints = _range_command(fetch_constraints)
+cmd_fetch_generation = _range_command(fetch_generation)
+cmd_fetch_schedule = _range_command(fetch_schedule)
+
+
+def _plan_days(args: argparse.Namespace) -> list[pd.Timestamp]:
+    end = _date(args.end) if args.end else _date(args.start) + pd.Timedelta(days=1)
+    return _days(_date(args.start), end)
+
+
+def cmd_plan(args: argparse.Namespace) -> None:
+    """Show which inputs the forecast days need and which are already downloaded."""
+    config = load_config(args.config)
+    result = inventory.plan(config, _plan_days(args))
+    if args.json:
+        print(json.dumps(result))
+        return
+    for item in result["datasets"]:
+        print(f"{item['title']} ({item['source']}): " + ", ".join(f"{row['day']} {row['status']}" for row in item["rows"]))
+    print(f"{result['missing']} downloads needed; ready to forecast: {', '.join(result['ready']) or 'none'}")
+    if not result["model"]["ready"]:
+        print(f"models: {result['model']['reason']} Run train before predict.")
+
+
+def _progress(**fields) -> None:
+    print("PROGRESS " + json.dumps(fields), flush=True)
+
+
+def cmd_fetch_days(args: argparse.Namespace) -> None:
+    """Download only the inputs the forecast days still miss, one source at a time, and remember what was downloaded."""
+    config = load_config(args.config)
+    days = _plan_days(args)
+    result = inventory.plan(config, days)
+    fetchers = {
+        "market": fetch_market, "intraday": fetch_intraday, "constraints": fetch_constraints,
+        "schedule": fetch_schedule, "generation": fetch_generation,
+        "weather": lambda c, a, b: fetch_weather(c, a, b, inventory.units(c)),
+    }
+    folder = config.resolve(config.paths.generation_dir)
+    asked = {}
+    for item in result["datasets"]:
+        missing = [_date(row["day"]) for row in item["rows"] if row["fetch"]]
+        pending = sum(row["status"] == "pending" for row in item["rows"])
+        waiting = sum(row["status"] == "late" and not row["fetch"] for row in item["rows"])
+        if not missing:
+            state = "not_published" if pending else "retry_later" if waiting else "on_disk"
+            _progress(dataset=item["key"], state=state, pending=pending, waiting=waiting)
+            continue
+        _progress(dataset=item["key"], state="running", days=len(missing), pending=pending)
+        if item["key"] == "generation":
+            for day in missing:
+                (folder / f"{day:%Y-%m-%d}.csv").unlink(missing_ok=True)
+        try:
+            for first, last in inventory.runs(missing):
+                if item["source"] == "REE e-sios":
+                    time.sleep(config.request_interval_seconds)
+                fetchers[item["key"]](config, first, last)
+        except Exception as error:
+            print(f"{item['key']}: {error}", flush=True)
+            _progress(dataset=item["key"], state="failed", error=str(error))
+            continue
+        inventory.record(config, item["key"], missing)
+        asked[item["key"]] = ({f"{day:%Y-%m-%d}" for day in missing}, pending)
+        _progress(dataset=item["key"], state="checking", pending=pending)
+    final = inventory.plan(config, days)
+    for item in final["datasets"]:
+        if item["key"] in asked:
+            names, pending = asked[item["key"]]
+            late = sum(row["day"] in names and row["status"] not in ("have", "gap") for row in item["rows"])
+            _progress(dataset=item["key"], state="late" if late else "done", late=late, pending=pending)
+    open_items = sum(row["status"] not in ("have", "gap") for item in final["datasets"] for row in item["rows"])
+    _progress(state="finished", missing=open_items, ready=final["ready"])
+    print(f"{open_items} inputs not on disk yet; ready to forecast: {', '.join(final['ready']) or 'none'}")
 
 
 def cmd_fetch_redispatch(args: argparse.Namespace) -> None:
@@ -174,9 +257,10 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
 
 def cmd_predict(args: argparse.Namespace) -> None:
-    """Call each unit up, down or nothing for every quarter-hour of one delivery day and log the calls."""
+    """Call each unit up, down or nothing for every quarter-hour of one delivery day, or a range of days, and log the calls."""
     config = load_config(args.config)
-    day = _date(args.date)
+    first = _date(args.date)
+    days = _days(first, _date(args.end)) if args.end else [first]
     issued_at = datetime.fromisoformat(args.issued_at) if args.issued_at else None
     model_dir = config.resolve(config.paths.model_dir)
     bundles = {direction: estimator.load(model_dir, direction) for direction in pipeline.DIRECTION_NAMES}
@@ -185,18 +269,27 @@ def cmd_predict(args: argparse.Namespace) -> None:
         print("the downward and upward models were trained on different units; run train for both directions", file=sys.stderr)
         sys.exit(1)
     inputs = pipeline.load_inputs(config, units)
-    dataset = pipeline.build(config, inputs, None, [day])
-    predictions = pipeline.predict_day(bundles, dataset, day, config.model.threshold, issued_at)
+    dataset = pipeline.build(config, inputs, None, days)
     path = config.resolve(config.paths.predictions)
-    ledger.append(predictions, path)
-
-    calls = predictions[predictions["decision"] != "nothing"]
-    print(f"{len(predictions)} rows for {day:%Y-%m-%d}: "
-          + ", ".join(f"{name} {(predictions['decision'] == name).sum():,}" for name in ("down", "up", "nothing")))
-    print("units with the most up or down quarter-hours:")
-    for (unit, decision), count in calls.groupby(["unit", "decision"]).size().sort_values(ascending=False).head(args.top).items():
-        print(f"  {unit}  {decision}  {count} quarter-hours")
+    failed = 0
+    for day in days:
+        try:
+            predictions = pipeline.predict_day(bundles, dataset, day, config.model.threshold, issued_at)
+        except ValueError as error:
+            print(error, flush=True)
+            failed += 1
+            continue
+        ledger.append(predictions, path)
+        calls = predictions[predictions["decision"] != "nothing"]
+        print(f"{len(predictions)} rows for {day:%Y-%m-%d}: "
+              + ", ".join(f"{name} {(predictions['decision'] == name).sum():,}" for name in ("down", "up", "nothing")), flush=True)
+        if len(days) == 1:
+            print("units with the most up or down quarter-hours:")
+            for (unit, decision), count in calls.groupby(["unit", "decision"]).size().sort_values(ascending=False).head(args.top).items():
+                print(f"  {unit}  {decision}  {count} quarter-hours")
     print(f"logged: {path}")
+    if failed == len(days):
+        sys.exit(1)
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
@@ -240,6 +333,17 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--end", required=True, help="day after the last delivery date YYYY-MM-DD")
         command.set_defaults(func=func)
 
+    for name, func, text in (
+        ("plan", cmd_plan, "show which inputs the forecast days need and which are downloaded"),
+        ("fetch-days", cmd_fetch_days, "download only the inputs the forecast days still miss"),
+    ):
+        command = sub.add_parser(name, help=text)
+        command.add_argument("--start", required=True, help="first forecast day YYYY-MM-DD")
+        command.add_argument("--end", help="day after the last forecast day YYYY-MM-DD; default one day")
+        if name == "plan":
+            command.add_argument("--json", action="store_true", help="print the plan as JSON")
+        command.set_defaults(func=func)
+
     train = sub.add_parser("train", help="train and save the models for each direction")
     train.add_argument("--direction", help="train only this direction, e.g. Bajar or Subir")
     train.add_argument("--test-days", type=int, help="score the last N days with published redispatch before the final refit; default test_days in config, 0 for none")
@@ -250,7 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.set_defaults(func=cmd_backtest)
 
     predict = sub.add_parser("predict", help="call each unit up, down or nothing for a delivery day")
-    predict.add_argument("--date", required=True, help="delivery date YYYY-MM-DD")
+    predict.add_argument("--date", required=True, help="delivery date YYYY-MM-DD, or the first of a range")
+    predict.add_argument("--end", help="day after the last delivery date of a range YYYY-MM-DD")
     predict.add_argument("--issued-at", help="ISO timestamp recorded as issue time")
     predict.add_argument("--top", type=int, default=10, help="number of units with the most up or down quarter-hours to print")
     predict.set_defaults(func=cmd_predict)

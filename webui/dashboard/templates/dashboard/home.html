@@ -1,0 +1,27 @@
+{% extends "dashboard/base.html" %}
+{% block mast %}
+    <div class="brand">
+      <div class="eyebrow">Grid redispatch forecast</div>
+      <h1>Spain</h1>
+      <p class="lede">Every day, Red Eléctrica (REE), Spain's transmission system operator, redispatches generating units to solve technical constraints on the grid: it raises some units above their day-ahead schedule and lowers others. This tool forecasts, for 41 large generating units and every hour of the day, whether REE will redispatch them upward, downward or not at all.</p>
+    </div>
+{% endblock %}
+
+{% block content %}
+  <section class="choices" aria-label="What would you like to do?">
+    <a class="choice" href="{% url 'dashboard:validation' %}">
+      <span class="choice-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M4 19V5m0 14h16M8 15l3-4 3 2 5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="label accent">Option 1</span>
+      <h2>Validation results</h2>
+      <p class="explain">See how well the forecast did on {{ days }} past delivery days, checked against the redispatch REE published for them: accuracy, precision and hit rate, a map of the units, and each unit's hour-by-hour calls.</p>
+      <span class="go">Open the validation results <span aria-hidden="true">→</span></span>
+    </a>
+    <a class="choice" href="{% url 'dashboard:forecast' %}">
+      <span class="choice-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4m8-4v4m-4 6v4m-2-2l2 2 2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="label accent">Option 2</span>
+      <h2>Forecast new days</h2>
+      <p class="explain">Pick one or more delivery days. The tool lists the market, grid, weather and unit-output data those days need, downloads only what is not on disk yet, and runs the forecast.</p>
+      <span class="go">Start a forecast <span aria-hidden="true">→</span></span>
+    </a>
+  </section>
+{% endblock %}

@@ -102,15 +102,17 @@ redispatch-es fetch-generation --start 2025-09-29 --end 2026-10-22
 redispatch-es fetch-redispatch --start 2025-10-01 --end 2026-07-18
 redispatch-es train
 redispatch-es backtest --days 14
+redispatch-es plan --start 2026-10-27 --end 2026-10-29
+redispatch-es fetch-days --start 2026-10-27 --end 2026-10-29
 redispatch-es predict --date 2026-10-15
 redispatch-es validate
 ```
 
-`--end` is the day after the last delivery date. To predict a new day, fetch the market, intraday, constraint, schedule and weather data for that day and the unit output for the two days before it, then run `predict`. Requests to REE are spaced out, because REE briefly blocks clients that send rapid requests.
+`--end` is the day after the last delivery date. To predict a new day, `plan` lists the data it needs (market, intraday, constraint, schedule and weather data for that day, and the unit output for the two days before it) and which of it is already on disk; `fetch-days` downloads only the missing items and records them in `data/raw/download_log.json`, so nothing is downloaded twice. Then run `predict`. Requests to REE are spaced out, because REE briefly blocks clients that send rapid requests.
 
 ## Dashboard
 
-`webui/` holds a Django dashboard of the backtest results: headline figures, a map of Spain where each unit glows by forecast, outcome or technology, a day-by-day chart, and a card for every unit with its hourly calls. Double-click `webui/app.bat` to start it at http://localhost:9100/. See `webui/README.md`.
+`webui/` holds a Django web UI with two options. **Validation results** shows the backtest: headline figures, a map of Spain where each unit glows by forecast, outcome or technology, a day-by-day chart, and a card for every unit with its hourly calls. **Forecast new days** lets you pick delivery days, shows the data they need, downloads only what is missing and runs the forecast. Double-click `webui/app.bat` to start it at http://localhost:9100/. See `webui/README.md`.
 
 ## Project layout
 

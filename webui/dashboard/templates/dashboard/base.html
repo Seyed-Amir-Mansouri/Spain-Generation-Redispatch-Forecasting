@@ -1,0 +1,32 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="{% block description %}Forecast of which Spanish generating units REE will redispatch, with its validation results.{% endblock %}">
+  <title>{% block title %}Spain{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230096ff'/%3E%3Cpath d='M8 21l5-6 4 3 7-9' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="{% static 'dashboard/app.css' %}">
+</head>
+<body>
+<header class="top">
+  <div class="top-bar">
+    <a class="mark" href="{% url 'dashboard:home' %}"><svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0096ff"/><path d="M8 21l5-6 4 3 7-9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>Spain</b></span></a>
+    <nav class="nav" aria-label="Pages">
+      <a href="{% url 'dashboard:home' %}"{% if page == "home" %} aria-current="page"{% endif %}>Home</a>
+      <a href="{% url 'dashboard:validation' %}"{% if page == "validation" %} aria-current="page"{% endif %}>Validation</a>
+      <a href="{% url 'dashboard:forecast' %}"{% if page == "forecast" %} aria-current="page"{% endif %}>Forecast</a>
+    </nav>
+  </div>
+  <div class="mast">{% block mast %}{% endblock %}</div>
+</header>
+<div class="wrap">
+{% block content %}{% endblock %}
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>
