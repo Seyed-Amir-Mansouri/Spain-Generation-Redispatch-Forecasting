@@ -46,6 +46,10 @@ def forecast(request):
     return render(request, "dashboard/forecast.html", {"page": "forecast", "units": _load(settings.RESULTS_FILE)["units"], "limits": limits})
 
 
+def sources(request):
+    return render(request, "dashboard/sources.html", {"page": "sources", "now": datetime.now(ZoneInfo("Europe/Madrid")).isoformat()})
+
+
 def results(request):
     return JsonResponse(_load(settings.RESULTS_FILE))
 

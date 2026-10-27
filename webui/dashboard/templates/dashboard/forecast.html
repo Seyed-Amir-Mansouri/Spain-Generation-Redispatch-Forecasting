@@ -13,7 +13,7 @@
   <section class="panel step" aria-labelledby="pick-title">
     <div class="step-head"><span class="step-num">1</span>
       <div><h2 id="pick-title">Pick the delivery days</h2>
-        <p class="explain">Choose up to 14 delivery days, anywhere from 1 January 2026 up to tomorrow. Data up to 17 July 2026 is already on disk; later days are downloaded when you ask for them. A day's forecast uses data published before and on that day: the day-ahead market price and forecasts, REE's day-ahead schedule and Phase I totals, the intraday auctions (IDA3 clears on the delivery day itself), the weather forecast, and each unit's actual output on the two days before.</p></div>
+        <p class="explain">Choose up to 14 delivery days, anywhere from 1 January 2026 up to tomorrow. Data up to 17 July 2026 is already on disk; later days are downloaded when you ask for them. A day's forecast uses data published before and on that day: the SDAC price and forecasts, REE's day-ahead schedule and National Phase 1 redispatch, the intraday auctions (IDA3 clears on the delivery day itself), the weather forecast, and each unit's actual output on the two days before.</p></div>
     </div>
     <form class="pick" id="pick">
       <label><span class="label">First day</span><input type="date" id="first" required></label>
@@ -31,45 +31,40 @@
     <div class="sources">
       <h3>The data a forecast uses</h3>
       <table class="needs-table sources-table">
-        <thead><tr><th>Name</th><th>Data in it</th><th>Source</th><th>What it is</th></tr></thead>
+        <thead><tr><th>Name</th><th>Data in it</th><th>Source</th><th>Published (Madrid time)</th><th>Why it is used</th></tr></thead>
         <tbody>
-          <tr><td>Day-ahead market</td>
-            <td>Day-ahead price for Spain; Spain's demand, wind and solar forecasts. Every hour of the delivery day.</td>
+          <tr><td>Single Day-Ahead Coupling (SDAC)</td>
+            <td>Day-ahead price for Spain; Spain's demand, wind and solar forecasts for every hour of the delivery day.</td>
             <td class="src">ENTSO-E</td>
-            <td>The European day-ahead auction clears at noon the day before and sets the prices for the delivery day. REE's demand and renewable forecasts are published with it, by 18:00 the day before.</td></tr>
+            <td>Prices about 13:00 the day before; forecasts by 18:00 the day before.</td>
+            <td>The European auction that sets the delivery day's prices. Low prices with high wind and solar often mean renewables are moved down; low demand with little gas often means gas units are started for voltage.</td></tr>
           <tr><td>Intraday auctions</td>
             <td>IDA1, IDA2 and IDA3 prices, and each one's difference from the day-ahead price.</td>
             <td class="src">OMIE</td>
-            <td>Three later auctions where generators adjust their positions. IDA1 clears at 15:00 and IDA2 at 22:00 the day before. IDA3 clears at 10:00 on the delivery day and covers only hours 13 to 24.</td></tr>
-          <tr><td>Phase I totals</td>
-            <td>Energy REE moves up and down for each reason: overload in normal operation, overload after a fault, voltage, distribution grid, security and other. Also the total moved up and down.</td>
+            <td>IDA1 clears 15:00 and IDA2 22:00 the day before; IDA3 clears 10:00 on the delivery day, for hours 13 to 24 only. OMIE's files can appear later.</td>
+            <td>Later auctions where generators adjust their positions; they show how the schedule shifted after SDAC.</td></tr>
+          <tr><td>National Phase 1 redispatch</td>
+            <td>Energy REE moves up and down for each reason: overload in normal operation, overload after a fault, voltage, distribution grid, security and other, plus the totals.</td>
             <td class="src">REE e-sios</td>
-            <td>After the day-ahead market, REE checks the schedule against the grid and moves units to fix it. This is Phase I of the technical-constraint process, solved the afternoon before. These are totals for the whole peninsula, not per unit.</td></tr>
+            <td>Afternoon of the day before.</td>
+            <td>REE's own peninsula-wide figure for how much it redispatches to fix the grid. The model still has to work out which units are moved.</td></tr>
           <tr><td>Day-ahead schedule</td>
             <td>Scheduled energy per technology: combined cycle, nuclear, wind, solar PV, solar thermal, hydro, pumped storage, cogeneration, and imports and exports with France and Portugal.</td>
             <td class="src">REE e-sios</td>
-            <td>The base schedule (PBF): the day-ahead market plus bilateral contracts. It is the schedule REE checks in Phase I, published early in the afternoon before.</td></tr>
+            <td>Early afternoon of the day before.</td>
+            <td>The base schedule (PBF) that REE checks in Phase 1. When little gas or nuclear is scheduled, REE usually adds gas units to keep the grid stable.</td></tr>
           <tr><td>Weather forecast</td>
-            <td>Wind speed at 100 m, solar radiation and cloud cover.</td>
+            <td>Wind speed at 100 m, solar radiation and cloud cover, averaged over 2&deg; areas around the wind and solar sites.</td>
             <td class="src">Open-Meteo</td>
-            <td>Forecasts at the wind and solar sites, averaged over 2° areas. Available days ahead.</td></tr>
+            <td>Days ahead, updated through the day.</td>
+            <td>Wind and sun near the plants decide where renewable output meets grid limits. Area averages worked better in tests than single sites.</td></tr>
           <tr><td>Unit output</td>
-            <td>Actual output of each of the 41 units and of their sister units at the same plant.</td>
+            <td>Actual output of each of the 41 units and their sister units at the same plant, for two days before delivery and the day before up to noon.</td>
             <td class="src">ENTSO-E</td>
-            <td>What each unit really produced, after any redispatch. The forecast uses two days before delivery and the day before up to noon. ENTSO-E normally publishes it an hour after real time, but it is often a day or more late.</td></tr>
+            <td>About an hour after real time, but often a day or more late.</td>
+            <td>REE tends to move the units it moved on recent days, and often takes turns between sister units. Two days before is the newest full day available at noon the day before.</td></tr>
         </tbody>
       </table>
-      <div class="sources-note">
-        <p><b>Why each data set is used</b></p>
-        <ul>
-          <li><b>Day-ahead market:</b> this is where the day starts. Low prices together with high wind and solar usually mean REE will have to move renewables down. Low demand with little gas running often means it will have to start gas units to hold the grid's voltage.</li>
-          <li><b>Intraday auctions:</b> these show how the schedule shifted after the day-ahead market. IDA3 clears on the delivery day itself and covers only hours 13 to 24. A forecast that uses it can therefore only be issued that morning.</li>
-          <li><b>Phase I totals:</b> REE's own figure for how much energy it moves, up and down, for each reason. They are published the afternoon before delivery, so the model knows how much moving there will be. It still has to work out which units are moved. They are totals for the whole peninsula only.</li>
-          <li><b>Day-ahead schedule:</b> shows which technologies the market has scheduled. When little gas or nuclear is scheduled, REE usually adds gas units in Phase I to keep the grid stable.</li>
-          <li><b>Weather forecast:</b> wind and sun near the plants decide where too much renewable output meets grid limits. Averages over 2° areas worked better in tests than the weather at each single site.</li>
-          <li><b>Unit output:</b> REE tends to move the same units it moved on recent days. ENTSO-E publishes a unit's actual output only after real time. When the forecast is made, at noon the day before, the newest full day available is therefore two days before delivery. The morning of the day before, up to noon, is used as well. Sister units at the same plant are included because REE often takes turns between them.</li>
-        </ul>
-      </div>
     </div>
     <div class="tl-wrap">
       <div class="tl-top"><h3 id="tl-title"></h3></div>

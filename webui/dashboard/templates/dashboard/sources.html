@@ -1,0 +1,49 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+{% block title %}Data Sources · Spain{% endblock %}
+{% block mast %}
+    <div class="brand">
+      <div class="eyebrow">Free and paid inputs</div>
+      <h1>Data Sources</h1>
+      <p class="lede">Which inputs a forecast for tomorrow or for today can get from free sources right now, and where a paid source would close the gap. Madrid time now: <b id="now"></b>. The status follows each source's usual publishing time; it does not ask the sources.</p>
+    </div>
+{% endblock %}
+
+{% block content %}
+  <section class="panel step" aria-labelledby="dayahead-title">
+    <div class="step-head"><span class="step-num">1</span>
+      <div><h2 id="dayahead-title">Day-ahead use: forecast for <span id="dayahead-day"></span></h2>
+        <p class="explain">A forecast for tomorrow, made today. The current models cannot run here, because IDA3 for tomorrow clears only tomorrow morning; this case needs a model variant without IDA3.</p></div>
+    </div>
+    <div class="sources">
+      <table class="needs-table sources-table">
+        <thead><tr><th>Input</th><th>Free, now</th><th>Paid</th></tr></thead>
+        <tbody id="dayahead-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel step" aria-labelledby="daily-title">
+    <div class="step-head"><span class="step-num">2</span>
+      <div><h2 id="daily-title">Daily use: forecast for <span id="daily-day"></span></h2>
+        <p class="explain">A forecast for today. The gap is the intraday prices: OMIE's free daily files come out only after the delivery day, so it closes only if a free per-auction source can be downloaded.</p></div>
+    </div>
+    <div class="sources">
+      <table class="needs-table sources-table">
+        <thead><tr><th>Input</th><th>Free, now</th><th>Paid</th></tr></thead>
+        <tbody id="daily-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--hit)"></i>Out now</span>
+    <span><i class="dot" style="background:var(--warn)"></i>Partly out, or due but often late</span>
+    <span><i class="dot hollow"></i>Not out yet</span>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+{{ now|json_script:"now-data" }}
+<script src="{% static 'dashboard/sources.js' %}?v={{ asset_version }}"></script>
+{% endblock %}

@@ -4,7 +4,7 @@ const LIMITS = JSON.parse($("limits-data").textContent);
 const MAX_DAYS = 14;
 const STATUS = { have: "On disk", missing: "Published, ready to download", late: "Due, but the source has not published it yet",
   pending: "Not published yet", gap: "Final, with gaps at the source" };
-const SHORT = { market: "Day-ahead market", intraday: "Intraday auctions", constraints: "Phase I totals", schedule: "Day-ahead schedule", weather: "Weather forecast", generation: "Unit output" };
+const SHORT = { market: "Single Day-Ahead Coupling (SDAC)", intraday: "Intraday auctions", constraints: "National Phase 1 redispatch", schedule: "Day-ahead schedule", weather: "Weather forecast", generation: "Unit output" };
 const clock = text => new Date(text).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
 const when = text => new Date(text).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
 const STEP_STATE = { waiting: "Waiting", running: "Running", checking: "Downloaded · checking", done: "Done", on_disk: "Already on disk",
@@ -12,7 +12,7 @@ const STEP_STATE = { waiting: "Waiting", running: "Running", checking: "Download
   skipped: "Skipped", failed: "Failed" };
 const JOB_STATE = { running: "Running", done: "Finished", failed: "Failed", stopped: "Stopped" };
 const DATASETS = [["market", "Day-ahead price and demand, wind and solar forecasts · ENTSO-E"], ["intraday", "Intraday auction prices · OMIE"],
-  ["constraints", "National Phase I redispatch totals · REE e-sios"], ["schedule", "Day-ahead schedule per technology · REE e-sios"],
+  ["constraints", "National Phase 1 redispatch · REE e-sios"], ["schedule", "Day-ahead schedule per technology · REE e-sios"],
   ["weather", "Weather forecast at the wind and solar sites · Open-Meteo"], ["generation", "Actual output of each unit · ENTSO-E"]];
 const state = { plan: null, timer: null };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
