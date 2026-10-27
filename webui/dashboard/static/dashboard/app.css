@@ -251,6 +251,10 @@ h2 { margin: 0; font: 500 1.4rem var(--display); color: var(--fg); letter-spacin
 .sources { display: grid; gap: 10px; margin-bottom: 18px; }
 .sources-table td { vertical-align: top; line-height: 1.45; }
 .sources-table td:first-child { font-weight: 500; white-space: nowrap; }
+.sources-note { font-size: .78rem; line-height: 1.5; color: var(--muted); }
+.sources-note p { margin: 0 0 4px; }
+.sources-note ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+.sources-note b { color: var(--fg); font-weight: 500; }
 @media (max-width: 720px) { .sources { overflow-x: auto; } .sources-table { min-width: 640px; } }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font: 500 .78rem var(--mono); padding: 3px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }

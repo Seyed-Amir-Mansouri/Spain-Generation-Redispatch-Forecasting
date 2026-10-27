@@ -34,9 +34,9 @@
         <thead><tr><th>Name</th><th>Data in it</th><th>Source</th><th>What it is</th></tr></thead>
         <tbody>
           <tr><td>Day-ahead market</td>
-            <td>Day-ahead price for Spain; Spain's demand, wind and solar forecasts. Every quarter-hour of the delivery day.</td>
+            <td>Day-ahead price for Spain; Spain's demand, wind and solar forecasts. Every hour of the delivery day.</td>
             <td class="src">ENTSO-E</td>
-            <td>The European day-ahead auction clears at noon the day before and sets the price for each quarter-hour. REE's demand and renewable forecasts are published with it, by 18:00 the day before.</td></tr>
+            <td>The European day-ahead auction clears at noon the day before and sets the prices for the delivery day. REE's demand and renewable forecasts are published with it, by 18:00 the day before.</td></tr>
           <tr><td>Intraday auctions</td>
             <td>IDA1, IDA2 and IDA3 prices, and each one's difference from the day-ahead price.</td>
             <td class="src">OMIE</td>
@@ -52,13 +52,24 @@
           <tr><td>Weather forecast</td>
             <td>Wind speed at 100 m, solar radiation and cloud cover.</td>
             <td class="src">Open-Meteo</td>
-            <td>Forecasts at the wind and solar sites, averaged over 2° areas. They are hourly, so they are interpolated to quarter-hours. Available days ahead.</td></tr>
+            <td>Forecasts at the wind and solar sites, averaged over 2° areas. Available days ahead.</td></tr>
           <tr><td>Unit output</td>
-            <td>Actual output of each of the 41 units and of their sister units at the same plant, every quarter-hour.</td>
+            <td>Actual output of each of the 41 units and of their sister units at the same plant.</td>
             <td class="src">ENTSO-E</td>
             <td>What each unit really produced, after any redispatch. The forecast uses two days before delivery and the day before up to noon. ENTSO-E normally publishes it an hour after real time, but it is often a day or more late.</td></tr>
         </tbody>
       </table>
+      <div class="sources-note">
+        <p><b>Why each data set is used</b></p>
+        <ul>
+          <li><b>Day-ahead market:</b> this is where the day starts. Low prices together with high wind and solar usually mean REE will have to move renewables down. Low demand with little gas running often means it will have to start gas units to hold the grid's voltage.</li>
+          <li><b>Intraday auctions:</b> these show how the schedule shifted after the day-ahead market. IDA3 clears on the delivery day itself and covers only hours 13 to 24. A forecast that uses it can therefore only be issued that morning.</li>
+          <li><b>Phase I totals:</b> REE's own figure for how much energy it moves, up and down, for each reason. They are published the afternoon before delivery, so the model knows how much moving there will be. It still has to work out which units are moved. They are totals for the whole peninsula only.</li>
+          <li><b>Day-ahead schedule:</b> shows which technologies the market has scheduled. When little gas or nuclear is scheduled, REE usually adds gas units in Phase I to keep the grid stable.</li>
+          <li><b>Weather forecast:</b> wind and sun near the plants decide where too much renewable output meets grid limits. Averages over 2° areas worked better in tests than the weather at each single site.</li>
+          <li><b>Unit output:</b> REE tends to move the same units it moved on recent days. ENTSO-E publishes a unit's actual output only after real time. When the forecast is made, at noon the day before, the newest full day available is therefore two days before delivery. The morning of the day before, up to noon, is used as well. Sister units at the same plant are included because REE often takes turns between them.</li>
+        </ul>
+      </div>
     </div>
     <div class="tl-wrap">
       <div class="tl-top"><h3 id="tl-title"></h3></div>
@@ -100,7 +111,7 @@
 
   <section class="stacked roomy" id="results" aria-labelledby="results-title" hidden>
     <div class="board-head"><h2 id="results-title">Forecast</h2></div>
-    <p class="explain">For each delivery day, the units the model calls for redispatch, with the hours it expects REE to move them: blue for upward, orange for downward. A unit is called in an hour when its probability reaches 0.50 in any quarter-hour of that hour. The remaining units are expected to keep their day-ahead schedule.</p>
+    <p class="explain">For each delivery day, the units the model calls for redispatch, with the hours it expects REE to move them: blue for upward, orange for downward. A unit is called in an hour when its probability for that hour reaches 0.50. The remaining units are expected to keep their day-ahead schedule.</p>
     <div class="legend"><span><i class="dot" style="background:var(--up)"></i>Hour called upward</span><span><i class="dot" style="background:var(--down)"></i>Hour called downward</span></div>
     <div id="result-days" class="board"></div>
   </section>

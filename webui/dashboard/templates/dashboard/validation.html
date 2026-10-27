@@ -45,7 +45,7 @@
     <h2>Key terms</h2>
     <dl>
       <div><dt><i class="dot" style="background:var(--up)"></i>Called</dt><dd>The model forecasts that REE will redispatch the unit on that delivery day: its probability reaches the threshold in at least one hour.</dd></div>
-      <div><dt><i class="dot" style="background:var(--hit)"></i>Redispatched</dt><dd>REE actually changed the unit's day-ahead schedule, upward or downward, by at least 1.25 MWh in at least one quarter-hour of that day to solve a technical constraint.</dd></div>
+      <div><dt><i class="dot" style="background:var(--hit)"></i>Redispatched</dt><dd>REE actually changed the unit's day-ahead schedule, upward or downward, by at least 1.25 MWh at least once that day to solve a technical constraint.</dd></div>
       <div><dt><i class="dot" style="background:var(--quiet)"></i>Not called</dt><dd>The model's probability stayed below the threshold in every hour: no redispatch is expected for the unit that day.</dd></div>
     </dl>
     <p class="explain">Each unit on each delivery day falls into one of four outcomes: <b>redispatched, as called</b> (correct); <b>redispatched, missed</b> (the model did not call it); <b>false alarm</b> (called, but not redispatched); <b>not redispatched, as expected</b> (correct).</p>

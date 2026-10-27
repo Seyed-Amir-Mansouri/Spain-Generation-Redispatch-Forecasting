@@ -25,6 +25,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 document.documentElement.style.setProperty("--n", N);
 
 function score(r) { return state.dir === "up" ? r.pu : state.dir === "down" ? r.pd : Math.max(r.pu, r.pd); }
+function hoursIn(mask) { let n = 0; for (let h = 0; h < 24; h++) n += (mask >> h) & 1; return n; }
+function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
 function moved(r) { return state.dir === "up" ? r.qu > 0 : state.dir === "down" ? r.qd > 0 : (r.qu > 0 || r.qd > 0); }
 function outcome(r) { const f = score(r) >= state.t, m = moved(r); return m && f ? "hit" : m ? "miss" : f ? "false" : "quiet"; }
 function tally(records) {
@@ -242,7 +244,7 @@ function focusUnit(code, tip) {
   if (state.day >= 0) {
     const r = byUnitDay[code][state.day];
     body = `<div class="tip-row"><span>Upward prob.</span><span>${fmtP(r.pu)}</span></div><div class="tip-row"><span>Downward prob.</span><span>${fmtP(r.pd)}</span></div>
-      <div class="tip-row"><span>Redispatched</span><span>${r.qu ? `upward ${r.qu} QH` : ""}${r.qu && r.qd ? " · " : ""}${r.qd ? `downward ${r.qd} QH` : ""}${!r.qu && !r.qd ? "no" : ""}</span></div>
+      <div class="tip-row"><span>Redispatched</span><span>${r.qu ? `upward ${plural(hoursIn(r.au), "hour")}` : ""}${r.qu && r.qd ? " · " : ""}${r.qd ? `downward ${plural(hoursIn(r.ad), "hour")}` : ""}${!r.qu && !r.qd ? "no" : ""}</span></div>
       <div style="margin-top:6px"><em>${OUTCOMES[l.o][0]}</em></div>`;
   } else {
     const c = tally(byUnitDay[code]);
@@ -339,7 +341,7 @@ function renderDetail() {
     body = `<div class="legend"><span><i class="dot" style="background:var(--up)"></i>Upward probability</span><span><i class="dot" style="background:var(--down)"></i>Downward probability</span>
       <span><i class="dot" style="background:color-mix(in srgb, var(--up) 30%, transparent)"></i>Hours redispatched upward</span><span><i class="dot" style="background:color-mix(in srgb, var(--down) 30%, transparent)"></i>Hours redispatched downward</span></div>
       <div class="svgwrap">${s}</div>
-      <p class="hint num">Bars are the model's hourly probability; shaded hours are when REE actually redispatched the unit. Redispatched upward in ${r.qu} quarter-hours and downward in ${r.qd}. Highest probability: upward ${r.pu.toFixed(2)}, downward ${r.pd.toFixed(2)}.</p>`;
+      <p class="hint num">Bars are the model's hourly probability; shaded hours are when REE actually redispatched the unit. Redispatched upward in ${plural(hoursIn(r.au), "hour")} and downward in ${plural(hoursIn(r.ad), "hour")}. Highest probability: upward ${r.pu.toFixed(2)}, downward ${r.pd.toFixed(2)}.</p>`;
   } else {
     const c = tally(rs);
     body = `<div class="track">${rs.map((r, i) => `<i style="height:34px;background:var(${OUTCOMES[outcome(r)][1]})" title="${fmtDay(i, true)}"></i>`).join("")}</div>
