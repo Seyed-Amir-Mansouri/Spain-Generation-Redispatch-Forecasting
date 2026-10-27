@@ -6,7 +6,7 @@ const OUTCOMES = { hit: ["Redispatched, as called", "--hit"], miss: ["Redispatch
 const LIGHTS = { hit: "--n-hit", miss: "--n-miss", false: "--n-false", quiet: "--n-quiet" };
 const TECH_LIGHTS = { "Combined cycle": "--t-ccgt", "Solar PV": "--t-solar", "Nuclear": "--t-nuclear", "Pumped hydro": "--t-hydro", "Coal": "--t-coal" };
 const SEAS = [["Mar Mediterráneo", 37.25, 0.2], ["Océano Atlántico", 36.25, -9.85], ["Mar Cantábrico", 43.78, -6.2]];
-const state = { t: 0.5, dir: "any", day: -1, filter: "all", query: "", open: null, mode: "forecast" };
+const state = { t: 0.5, dir: "any", day: -1, filter: "all", query: "", open: null, mode: "forecast", mapDay: 0, hour: 0 };
 const units = Object.fromEntries(DATA.units.map(u => [u.u, u]));
 const byUnitDay = {};
 DATA.records.forEach(r => { (byUnitDay[r.u] ||= [])[r.d] = r; });
@@ -33,6 +33,21 @@ function tally(records) {
   const c = { hit: 0, miss: 0, false: 0, quiet: 0 };
   records.forEach(r => c[outcome(r)]++);
   return c;
+}
+// the map shows one hour of the page's day, or of its own day pick when the page shows all days
+function mapDay() { return state.day >= 0 ? state.day : state.mapDay; }
+function atHour(r, h = state.hour) {
+  const au = r.au & (1 << h), ad = r.ad & (1 << h);
+  return { ...r, pu: r.hu[h], pd: r.hd[h], qu: au ? 1 : 0, qd: ad ? 1 : 0, au, ad };
+}
+// the day and hour with the most units forecast right, then the most redispatches called
+function bestHour() {
+  let best = { d: 0, h: 0, right: -1, hit: -1 };
+  DATA.days.forEach((_, d) => { for (let h = 0; h < 24; h++) {
+    const c = tally(DATA.units.map(u => atHour(byUnitDay[u.u][d], h))), right = c.hit + c.quiet;
+    if (right > best.right || (right === best.right && c.hit > best.hit)) best = { d, h, right, hit: c.hit };
+  } });
+  return best;
 }
 function chosen() { return DATA.records.filter(r => state.day < 0 || r.d === state.day); }
 
@@ -160,20 +175,11 @@ function buildMap() {
 
 function lamp(u, mode = state.mode) {
   if (mode === "technology") { const l = lamp(u, "forecast"); return { ...l, color: TECH_LIGHTS[u.tech] || "--t-other" }; }
-  const rs = byUnitDay[u.u];
-  if (state.day >= 0) {
-    const r = rs[state.day], p = score(r);
-    if (mode === "outcome") { const o = outcome(r); return { color: LIGHTS[o], on: o !== "quiet", glow: o === "quiet" ? 0.1 : 0.8, speed: 2.4, value: p, o }; }
-    const up = state.dir === "up" || (state.dir === "any" && r.pu >= r.pd);
-    const on = p >= state.t;
-    return { color: on ? (up ? "--n-up" : "--n-down") : "--n-quiet", on, glow: on ? 0.35 + 0.55 * p : 0.1, speed: 3.4 - 1.6 * p, value: p, o: outcome(r), up };
-  }
-  const c = tally(rs), called = c.hit + c.false, wrong = c.miss + c.false;
-  if (mode === "outcome") {
-    const color = c.hit + c.miss === 0 && c.false === 0 ? "--n-quiet" : wrong === 0 ? "--n-hit" : wrong <= 2 ? "--n-up" : "--n-miss";
-    return { color, on: c.hit + c.miss + c.false > 0, glow: 0.25 + 0.6 * (c.hit + c.miss) / N, speed: 2.8, value: called, c };
-  }
-  return { color: called ? "--n-up" : "--n-quiet", on: called > 0, glow: called ? 0.3 + 0.6 * called / N : 0.1, speed: 3.6 - 1.6 * called / N, value: called, c };
+  const r = atHour(byUnitDay[u.u][mapDay()]), p = score(r);
+  if (mode === "outcome") { const o = outcome(r); return { color: LIGHTS[o], on: o !== "quiet", glow: o === "quiet" ? 0.1 : 0.8, speed: 2.4, value: p, o }; }
+  const up = state.dir === "up" || (state.dir === "any" && r.pu >= r.pd);
+  const on = p >= state.t;
+  return { color: on ? (up ? "--n-up" : "--n-down") : "--n-quiet", on, glow: on ? 0.35 + 0.55 * p : 0.1, speed: 3.4 - 1.6 * p, value: p, o: outcome(r), up };
 }
 
 function renderMap() {
@@ -186,19 +192,18 @@ function renderMap() {
     g.classList.toggle("on", l.on); g.classList.toggle("dim", !l.on);
     g.classList.toggle("open", state.open === u.u);
   });
-  const dayText = state.day >= 0 ? fmtDay(state.day, true) : `all ${N} days`;
+  const dayText = `${fmtDay(mapDay(), true)}, hour ${state.hour + 1}`;
   $("map-title").textContent = state.mode === "forecast" ? `Lit for ${dayText}` : state.mode === "technology" ? `Technologies · ${dayText}` : `How ${dayText} went`;
+  $("map-day-pick").hidden = state.day >= 0;
+  $("map-day").value = state.mapDay;
+  $("map-hour").value = state.hour;
   const legend = state.mode === "technology"
     ? techs.filter(t => DATA.units.some(u => u.tech === t)).map(t => [TECH_LIGHTS[t] || "--t-other", `${t} <b class="num">${DATA.units.filter(u => u.tech === t).length}</b>`])
     : state.mode === "forecast"
-    ? (state.day >= 0
-      ? [["--n-up", "Called upward"], ["--n-down", "Called downward"], ["--n-quiet", "Not called"]]
-      : [["--n-up", "Called on some days; brighter and faster for more days"], ["--n-quiet", "Never called"]])
-    : (state.day >= 0
-      ? [["--n-hit", OUTCOMES.hit[0]], ["--n-miss", OUTCOMES.miss[0]], ["--n-false", OUTCOMES.false[0]], ["--n-quiet", OUTCOMES.quiet[0]]]
-      : [["--n-hit", "Right every day"], ["--n-up", "Wrong on 1–2 days"], ["--n-miss", "Wrong on 3 or more days"], ["--n-quiet", "Never redispatched or called"]]);
+    ? [["--n-up", "Called upward"], ["--n-down", "Called downward"], ["--n-quiet", "Not called"]]
+    : [["--n-hit", OUTCOMES.hit[0]], ["--n-miss", OUTCOMES.miss[0]], ["--n-false", OUTCOMES.false[0]], ["--n-quiet", OUTCOMES.quiet[0]]];
   $("map-legend").innerHTML = legend.map(([c, t]) => `<span><i class="dot" style="background:var(${c});color:var(${c})"></i>${t}</span>`).join("")
-    + (state.mode === "technology" ? `<span>Pulsing: called · dim: not called</span>` : state.day >= 0 && state.mode === "forecast" ? `<span>Brighter and faster for higher probability</span>` : "");
+    + (state.mode === "technology" ? `<span>Pulsing: called · dim: not called</span>` : state.mode === "forecast" ? `<span>Brighter and faster for higher probability</span>` : "");
   renderList();
 }
 
@@ -206,24 +211,13 @@ function renderList() {
   const items = DATA.units.map(u => ({ u, l: lamp(u) }));
   const row = ({ u, l }, value, note) => `<li tabindex="0" data-u="${u.u}" class="${state.open === u.u ? "open" : ""}" style="--c:var(${l.color})">
       <i class="lamp"></i><span class="who"><b>${u.u}</b><span>${esc(u.name)} · ${u.tech}</span></span><span class="p num">${value}<small>${note}</small></span></li>`;
-  let html = "", lit = 0;
-  if (state.day >= 0) {
-    const called = items.filter(x => x.l.value >= state.t).sort((a, b) => b.l.value - a.l.value);
-    const missed = items.filter(x => x.l.o === "miss").sort((a, b) => b.l.value - a.l.value);
-    lit = called.length;
-    html = called.map(x => row(x, fmtP(x.l.value), state.mode === "outcome" ? (x.l.o === "hit" ? "redispatched" : "false alarm") : (x.l.up === false ? "downward" : x.l.up ? "upward" : state.dir === "up" ? "upward" : "downward"))).join("")
-      || `<li class="empty">No unit reaches ${thr()} on this day.</li>`;
-    if (state.mode === "outcome" && missed.length) html += `<li class="sep">Redispatched, missed</li>` + missed.map(x => row(x, fmtP(x.l.value), "missed")).join("");
-    $("list-title").textContent = `Called · ${fmtDay(state.day, true)}`;
-    $("list-sub").textContent = `${lit} of ${DATA.units.length} units with a probability of ${thr()} or more`;
-  } else {
-    const called = items.filter(x => x.l.value > 0).sort((a, b) => b.l.value - a.l.value);
-    lit = called.length;
-    html = called.map(x => row(x, `${x.l.value}/${N}`, state.mode === "outcome" ? `${x.l.c.hit + x.l.c.quiet} right` : "days called")).join("")
-      || `<li class="empty">No unit reaches ${thr()} on any day.</li>`;
-    $("list-title").textContent = `Called over ${N} days`;
-    $("list-sub").textContent = `${lit} of ${DATA.units.length} units called at least once at ${thr()}`;
-  }
+  const called = items.filter(x => x.l.value >= state.t).sort((a, b) => b.l.value - a.l.value);
+  const missed = items.filter(x => x.l.o === "miss").sort((a, b) => b.l.value - a.l.value);
+  let html = called.map(x => row(x, fmtP(x.l.value), state.mode === "outcome" ? (x.l.o === "hit" ? "redispatched" : "false alarm") : (x.l.up === false ? "downward" : x.l.up ? "upward" : state.dir === "up" ? "upward" : "downward"))).join("")
+    || `<li class="empty">No unit reaches ${thr()} in this hour.</li>`;
+  if (state.mode === "outcome" && missed.length) html += `<li class="sep">Redispatched, missed</li>` + missed.map(x => row(x, fmtP(x.l.value), "missed")).join("");
+  $("list-title").textContent = `Called · ${fmtDay(mapDay(), true)}, hour ${state.hour + 1}`;
+  $("list-sub").textContent = `${called.length} of ${DATA.units.length} units with a probability of ${thr()} or more`;
   const list = $("list");
   list.innerHTML = html;
   list.querySelectorAll("li[data-u]").forEach(li => {
@@ -240,17 +234,10 @@ function focusUnit(code, tip) {
   const box = $("tip");
   if (!code || !tip || !lights[code]) { box.hidden = true; return; }
   const u = units[code], l = lamp(u), rect = lights[code].getBoundingClientRect(), host = $("mapbox").getBoundingClientRect();
-  let body;
-  if (state.day >= 0) {
-    const r = byUnitDay[code][state.day];
-    body = `<div class="tip-row"><span>Upward prob.</span><span>${fmtP(r.pu)}</span></div><div class="tip-row"><span>Downward prob.</span><span>${fmtP(r.pd)}</span></div>
+  const r = atHour(byUnitDay[code][mapDay()]);
+  const body = `<div class="tip-row"><span>Upward prob.</span><span>${fmtP(r.pu)}</span></div><div class="tip-row"><span>Downward prob.</span><span>${fmtP(r.pd)}</span></div>
       <div class="tip-row"><span>Redispatched</span><span>${r.qu ? `upward ${plural(hoursIn(r.au), "hour")}` : ""}${r.qu && r.qd ? " · " : ""}${r.qd ? `downward ${plural(hoursIn(r.ad), "hour")}` : ""}${!r.qu && !r.qd ? "no" : ""}</span></div>
       <div style="margin-top:6px"><em>${OUTCOMES[l.o][0]}</em></div>`;
-  } else {
-    const c = tally(byUnitDay[code]);
-    body = `<div class="tip-row"><span>Called</span><span>${c.hit + c.false}/${N} days</span></div><div class="tip-row"><span>Correct</span><span>${c.hit + c.quiet}/${N} days</span></div>
-      <div class="tip-row"><span>Missed · false alarms</span><span>${c.miss} · ${c.false}</span></div>`;
-  }
   box.innerHTML = `<strong>${code}</strong>${esc(u.name)} · ${u.tech}${body}`;
   box.hidden = false;
   const x = rect.left + rect.width / 2 - host.left, y = rect.top + rect.height / 2 - host.top;
@@ -357,10 +344,15 @@ function render() { renderControls(); renderKpis(); renderMap(); renderChart(); 
 
 $("window").textContent = `${fmtDay(0)} – ${fmtDay(N - 1, true)}`;
 $("unit-count").textContent = DATA.units.length;
+$("map-day").innerHTML = DATA.days.map((_, i) => `<option value="${i}">${fmtDay(i, true)}</option>`).join("");
+$("map-hour").innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">Hour ${h + 1} · ${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00</option>`).join("");
+$("map-day").addEventListener("change", e => { state.mapDay = +e.target.value; renderMap(); });
+$("map-hour").addEventListener("change", e => { state.hour = +e.target.value; renderMap(); });
 $("thr").addEventListener("input", e => { state.t = STOPS[+e.target.value]; render(); });
 document.querySelectorAll("#dir button").forEach(b => b.addEventListener("click", () => { state.dir = b.dataset.dir; render(); }));
 document.querySelectorAll("#mode button").forEach(b => b.addEventListener("click", () => { state.mode = b.dataset.mode; renderControls(); renderMap(); }));
 $("search").addEventListener("input", e => { state.query = e.target.value.trim().toLowerCase(); renderBoard(); });
 buildMap();
-state.day = N - 1;
+const best = bestHour();
+state.mapDay = best.d; state.hour = best.h;
 render();

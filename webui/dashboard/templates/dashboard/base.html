@@ -20,7 +20,7 @@
       <a href="{% url 'dashboard:home' %}"{% if page == "home" %} aria-current="page"{% endif %}>Home</a>
       <a href="{% url 'dashboard:validation' %}"{% if page == "validation" %} aria-current="page"{% endif %}>Validation</a>
       <a href="{% url 'dashboard:forecast' %}"{% if page == "forecast" %} aria-current="page"{% endif %}>Forecast</a>
-      <a href="{% url 'dashboard:sources' %}"{% if page == "sources" %} aria-current="page"{% endif %}>Data Sources</a>
+      <a href="{% url 'dashboard:sources' %}"{% if page == "sources" %} aria-current="page"{% endif %}>Data Status</a>
     </nav>
   </div>
   <div class="mast">{% block mast %}{% endblock %}</div>

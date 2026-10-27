@@ -107,6 +107,11 @@ button:focus-visible, input:focus-visible, .card:focus-visible, .bar:focus-visib
 .seg.dark { background: rgb(255 255 255 / .05); border-color: var(--n-line); }
 .seg.dark button { color: var(--n-text); }
 .seg.dark button[aria-pressed="true"] { background: #0096ff; color: #fff; }
+.map-pick { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.map-pick label { display: flex; align-items: center; gap: 8px; }
+.map-pick label[hidden] { display: none; }
+.map-pick select { font: .88rem var(--body); color: var(--n-text); background: rgb(255 255 255 / .05); border: 1px solid var(--n-line); border-radius: 8px; padding: 6px 10px; }
+.map-pick option { color: #000; }
 .mapbox { position: relative; }
 #map { display: block; width: 100%; height: auto; }
 #map .land-es { fill: url(#land-grad); stroke: var(--n-coast); stroke-width: .9; filter: url(#coast-glow); }

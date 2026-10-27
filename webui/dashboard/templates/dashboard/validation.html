@@ -60,7 +60,7 @@
   </section>
 
   <section class="panel ledger" aria-label="Outcome mix">
-    <p class="explain">The bar splits all forecasts into the four outcomes. Green and grey are correct. Red is a missed redispatch. Purple is a false alarm.</p>
+    <p class="explain">The bar splits all forecasts, one per unit and delivery day, into the four outcomes. Green is a hit: the unit was called and REE redispatched it. Grey is correct too: the unit was not called and REE did not redispatch it. Red is a missed redispatch: REE redispatched the unit, but the model did not call it. Purple is a false alarm: the model called the unit, but REE did not redispatch it at any time that day.</p>
     <div class="stack" id="stack"></div>
     <div class="legend" id="legend"></div>
   </section>
@@ -74,6 +74,10 @@
           <button type="button" data-mode="outcome" aria-pressed="false">Outcome</button>
           <button type="button" data-mode="technology" aria-pressed="false">Technology</button>
         </div>
+      </div>
+      <div class="map-pick">
+        <label id="map-day-pick"><span class="label">Day</span><select id="map-day"></select></label>
+        <label><span class="label">Hour</span><select id="map-hour"></select></label>
       </div>
       <p class="explain">Each light is one unit at its plant; units at the same site sit in a small ring. <b>Forecast</b> lights the units the model called, blue for upward and orange for downward redispatch; a brighter, faster pulse means a higher probability. <b>Outcome</b> shows whether each forecast was correct. <b>Technology</b> colours units by plant type. Point at or tap a light for details.</p>
       <div class="mapbox" id="mapbox">
