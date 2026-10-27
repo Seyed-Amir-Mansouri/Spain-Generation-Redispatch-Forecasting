@@ -18,7 +18,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 ROOT_URLCONF = "webui_spain.urls"
-TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIRS": [], "APP_DIRS": True, "OPTIONS": {}}]
+TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIRS": [], "APP_DIRS": True,
+              "OPTIONS": {"context_processors": ["dashboard.context.asset_version"]}}]
 WSGI_APPLICATION = "webui_spain.wsgi.application"
 DATABASES = {}
 

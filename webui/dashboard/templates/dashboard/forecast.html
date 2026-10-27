@@ -18,7 +18,7 @@
     <form class="pick" id="pick">
       <label><span class="label">First day</span><input type="date" id="first" required></label>
       <label><span class="label">Last day</span><input type="date" id="last" required></label>
-      <button type="submit" class="btn primary" id="check">Check the data</button>
+      <button type="submit" class="btn primary" id="check">Check data</button>
     </form>
     <p class="hint" id="pick-note" role="status"></p>
   </section>
@@ -27,6 +27,38 @@
     <div class="step-head"><span class="step-num">2</span>
       <div><h2 id="data-title">Data needed</h2>
         <p class="explain" id="data-intro"></p></div>
+    </div>
+    <div class="sources">
+      <h3>The data a forecast uses</h3>
+      <table class="needs-table sources-table">
+        <thead><tr><th>Name</th><th>Data in it</th><th>Source</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>Day-ahead market</td>
+            <td>Day-ahead price for Spain; Spain's demand, wind and solar forecasts. Every quarter-hour of the delivery day.</td>
+            <td class="src">ENTSO-E</td>
+            <td>The European day-ahead auction clears at noon the day before and sets the price for each quarter-hour. REE's demand and renewable forecasts are published with it, by 18:00 the day before.</td></tr>
+          <tr><td>Intraday auctions</td>
+            <td>IDA1, IDA2 and IDA3 prices, and each one's difference from the day-ahead price.</td>
+            <td class="src">OMIE</td>
+            <td>Three later auctions where generators adjust their positions. IDA1 clears at 15:00 and IDA2 at 22:00 the day before. IDA3 clears at 10:00 on the delivery day and covers only hours 13 to 24.</td></tr>
+          <tr><td>Phase I totals</td>
+            <td>Energy REE moves up and down for each reason: overload in normal operation, overload after a fault, voltage, distribution grid, security and other. Also the total moved up and down.</td>
+            <td class="src">REE e-sios</td>
+            <td>After the day-ahead market, REE checks the schedule against the grid and moves units to fix it. This is Phase I of the technical-constraint process, solved the afternoon before. These are totals for the whole peninsula, not per unit.</td></tr>
+          <tr><td>Day-ahead schedule</td>
+            <td>Scheduled energy per technology: combined cycle, nuclear, wind, solar PV, solar thermal, hydro, pumped storage, cogeneration, and imports and exports with France and Portugal.</td>
+            <td class="src">REE e-sios</td>
+            <td>The base schedule (PBF): the day-ahead market plus bilateral contracts. It is the schedule REE checks in Phase I, published early in the afternoon before.</td></tr>
+          <tr><td>Weather forecast</td>
+            <td>Wind speed at 100 m, solar radiation and cloud cover.</td>
+            <td class="src">Open-Meteo</td>
+            <td>Forecasts at the wind and solar sites, averaged over 2° areas. They are hourly, so they are interpolated to quarter-hours. Available days ahead.</td></tr>
+          <tr><td>Unit output</td>
+            <td>Actual output of each of the 41 units and of their sister units at the same plant, every quarter-hour.</td>
+            <td class="src">ENTSO-E</td>
+            <td>What each unit really produced, after any redispatch. The forecast uses two days before delivery and the day before up to noon. ENTSO-E normally publishes it an hour after real time, but it is often a day or more late.</td></tr>
+        </tbody>
+      </table>
     </div>
     <div class="tl-wrap">
       <div class="tl-top"><h3 id="tl-title"></h3></div>
@@ -77,5 +109,5 @@
 {% block scripts %}
 {{ units|json_script:"units-data" }}
 {{ limits|json_script:"limits-data" }}
-<script src="{% static 'dashboard/forecast.js' %}"></script>
+<script src="{% static 'dashboard/forecast.js' %}?v={{ asset_version }}"></script>
 {% endblock %}

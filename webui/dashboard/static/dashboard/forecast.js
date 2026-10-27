@@ -59,7 +59,7 @@ function renderPlan() {
     + "Data is never downloaded twice: the download log remembers every item, and data that is not published yet is not requested.";
   renderTimeline();
   $("needs").innerHTML = `<table class="needs-table"><thead><tr><th>Data</th><th>Source</th><th>Days</th></tr></thead><tbody>${plan.datasets.map(d => `
-    <tr><td>${esc(d.title)}</td><td class="src">${esc(d.source)}</td><td><div class="chips">${d.rows.map(r => {
+    <tr><td>${esc(SHORT[d.key])}</td><td class="src">${esc(d.source)}</td><td><div class="chips">${d.rows.map(r => {
       const why = d.key === "generation" ? ` · used for ${r.for.map(x => fmt(x)).join(", ")}` : "";
       const tried = r.downloaded ? ` · last checked ${stamp(r.downloaded)}` : "";
       const due = (r.status === "pending" || r.status === "late" ? ` · expected ${when(r.expected)}` : "")
@@ -242,7 +242,12 @@ async function showResults(first, last) {
   }).join("");
 }
 
-$("pick").addEventListener("submit", e => { e.preventDefault(); check(); });
+$("pick").addEventListener("submit", e => {
+  e.preventDefault();
+  clearTimeout(rangeTimer);
+  if (["first", "last"].includes(document.activeElement.id)) keepRange(document.activeElement.id);
+  check();
+});
 $("download").addEventListener("click", () => startJob("download"));
 $("run").addEventListener("click", () => startJob("forecast"));
 $("train").addEventListener("click", () => startJob("train"));
@@ -250,21 +255,31 @@ function shift(text, days) { const d = new Date(text + "T12:00:00Z"); d.setUTCDa
 
 function keepRange(changed) {
   const first = $("first").value, last = $("last").value;
-  if (!first || !last) return;
-  const latest = [shift(first, MAX_DAYS - 1), LIMITS.last].sort()[0], earliest = [shift(last, 1 - MAX_DAYS), LIMITS.first].sort()[1];
-  if (changed === "first" && (last < first || last > latest)) $("last").value = latest;
-  if (changed === "last" && (first > last || first < earliest)) $("first").value = earliest;
+  const valid = d => d && d >= LIMITS.first && d <= LIMITS.last;
+  if (!valid(first) || !valid(last)) return;
+  if (changed === "first") {
+    const latest = [shift(first, MAX_DAYS - 1), LIMITS.last].sort()[0];
+    if (last < first) $("last").value = first;
+    else if (last > latest) $("last").value = latest;
+  } else {
+    const earliest = [shift(last, 1 - MAX_DAYS), LIMITS.first].sort()[1];
+    if (first > last) $("first").value = last;
+    else if (first < earliest) $("first").value = earliest;
+  }
 }
-$("first").addEventListener("change", () => keepRange("first"));
-$("last").addEventListener("change", () => keepRange("last"));
+// typing fires a change for every digit, so the other date is only adjusted once typing pauses or the field is left
+let rangeTimer = null;
+["first", "last"].forEach(id => {
+  $(id).addEventListener("change", () => { clearTimeout(rangeTimer); rangeTimer = setTimeout(() => keepRange(id), 800); });
+  $(id).addEventListener("blur", () => { clearTimeout(rangeTimer); keepRange(id); });
+});
 
 (async () => {
   ["first", "last"].forEach((id, i) => { $(id).min = LIMITS.first; $(id).max = LIMITS.last; $(id).value = LIMITS.pick[i]; });
   try { state.job = await api("/api/job/"); } catch (e) { state.job = null; }
-  if (state.job && state.job.kind) {
+  if (running()) {
     renderJob();
-    if (running()) poll();
-    else if (state.job.kind === "forecast" && state.job.status === "done") showResults(state.job.days[0], state.job.days[state.job.days.length - 1]);
+    poll();
   }
   if (!running()) check();
 })();

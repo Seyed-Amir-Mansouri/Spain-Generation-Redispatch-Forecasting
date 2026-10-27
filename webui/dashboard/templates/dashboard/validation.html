@@ -117,5 +117,5 @@
 {% block scripts %}
 {{ results|json_script:"results-data" }}
 {{ outline|json_script:"map-data" }}
-<script src="{% static 'dashboard/app.js' %}"></script>
+<script src="{% static 'dashboard/app.js' %}?v={{ asset_version }}"></script>
 {% endblock %}
