@@ -41,22 +41,11 @@
     </div>
   </section>
 
-  <section class="panel terms" aria-label="Key terms">
-    <h2>Key terms</h2>
-    <dl>
-      <div><dt><i class="dot" style="background:var(--up)"></i>Called</dt><dd>The model forecasts that REE will redispatch the unit on that delivery day: its probability reaches the threshold in at least one hour.</dd></div>
-      <div><dt><i class="dot" style="background:var(--hit)"></i>Redispatched</dt><dd>REE actually changed the unit's day-ahead schedule, upward or downward, by at least 1.25 MWh at least once that day to solve a technical constraint.</dd></div>
-      <div><dt><i class="dot" style="background:var(--quiet)"></i>Not called</dt><dd>The model's probability stayed below the threshold in every hour: no redispatch is expected for the unit that day.</dd></div>
-    </dl>
-    <p class="explain">Each unit on each delivery day falls into one of four outcomes: <b>redispatched, as called</b> (correct); <b>redispatched, missed</b> (the model did not call it); <b>false alarm</b> (called, but not redispatched); <b>not redispatched, as expected</b> (correct).</p>
-  </section>
-
   <h2 class="sec">How often the forecast was right</h2>
   <section class="kpis" aria-label="Results">
     <div class="kpi lead"><span class="label">Accuracy</span><div class="fig num" id="k-acc"></div><p id="k-acc-note"></p></div>
     <div class="kpi"><span class="label">Precision</span><div class="fig num" id="k-prec"></div><p id="k-prec-note"></p></div>
     <div class="kpi"><span class="label">Hit rate</span><div class="fig num" id="k-rec"></div><p id="k-rec-note"></p></div>
-    <div class="kpi"><span class="label">Called · redispatched</span><div class="fig num" id="k-count"></div><p id="k-count-note"></p></div>
   </section>
 
   <section class="panel ledger" aria-label="Outcome mix">
@@ -70,8 +59,8 @@
       <div class="atlas-head">
         <div><span class="label accent">Unit map</span><h2 id="map-title">Units on the map</h2></div>
         <div class="seg dark" id="mode" role="group" aria-label="Light colour">
-          <button type="button" data-mode="forecast" aria-pressed="true">Forecast</button>
-          <button type="button" data-mode="outcome" aria-pressed="false">Outcome</button>
+          <button type="button" data-mode="forecast" aria-pressed="true">Prediction</button>
+          <button type="button" data-mode="outcome" aria-pressed="false">Check</button>
           <button type="button" data-mode="technology" aria-pressed="false">Technology</button>
         </div>
       </div>
@@ -79,7 +68,7 @@
         <label id="map-day-pick"><span class="label">Day</span><select id="map-day"></select></label>
         <label><span class="label">Hour</span><select id="map-hour"></select></label>
       </div>
-      <p class="explain">Each light is one unit at its plant; units at the same site sit in a small ring. <b>Forecast</b> lights the units the model called, blue for upward and orange for downward redispatch; a brighter, faster pulse means a higher probability. <b>Outcome</b> shows whether each forecast was correct. <b>Technology</b> colours units by plant type. Point at or tap a light for details.</p>
+      <p class="explain">Each light is one unit at its plant; units at the same site sit in a small ring. <b>Prediction</b> lights the units the model called, blue for upward and orange for downward redispatch; a brighter, faster pulse means a higher probability. <b>Check</b> shows whether each forecast was correct. <b>Technology</b> colours units by plant type. Point at or tap a light for details.</p>
       <div class="mapbox" id="mapbox">
         <svg id="map" role="img" aria-label="Map of Spain with each unit as a light"></svg>
         <div class="tip" id="tip" hidden></div>

@@ -76,13 +76,11 @@ function renderKpis() {
   const rs = chosen(), c = tally(rs), n = rs.length;
   const flagged = c.hit + c.false, real = c.hit + c.miss;
   $("k-acc").innerHTML = `${show(pct(c.hit + c.quiet, n))}<small>%</small>`;
-  $("k-acc-note").textContent = `${c.hit + c.quiet} of ${n} forecasts correct, redispatched or not`;
+  $("k-acc-note").textContent = `${c.hit + c.quiet} of ${n} forecasts right`;
   $("k-prec").innerHTML = `${show(pct(c.hit, flagged))}<small>%</small>`;
-  $("k-prec-note").textContent = `${c.hit} of ${flagged} calls were followed by redispatch`;
+  $("k-prec-note").textContent = `${c.hit} of ${flagged} calls came true`;
   $("k-rec").innerHTML = `${show(pct(c.hit, real))}<small>%</small>`;
-  $("k-rec-note").textContent = `${c.hit} of ${real} redispatches were called in advance`;
-  $("k-count").innerHTML = `${flagged}<small> · ${real}</small>`;
-  $("k-count-note").textContent = state.day < 0 ? `Units summed over ${N} days` : `Units on ${fmtDay(state.day, true)}`;
+  $("k-rec-note").textContent = `${c.hit} of ${real} redispatches caught`;
   $("stack").replaceChildren(...Object.keys(OUTCOMES).map(k => { const i = document.createElement("i"); i.style.width = `${100 * c[k] / n}%`; i.style.background = `var(${OUTCOMES[k][1]})`; return i; }));
   $("legend").replaceChildren(...Object.entries(OUTCOMES).map(([k, [label, col]]) => { const s = document.createElement("span");
     s.innerHTML = `<i class="dot" style="background:var(${col})"></i>${label} <b class="num">${c[k]}</b>`; return s; }));
@@ -176,10 +174,10 @@ function buildMap() {
 function lamp(u, mode = state.mode) {
   if (mode === "technology") { const l = lamp(u, "forecast"); return { ...l, color: TECH_LIGHTS[u.tech] || "--t-other" }; }
   const r = atHour(byUnitDay[u.u][mapDay()]), p = score(r);
-  if (mode === "outcome") { const o = outcome(r); return { color: LIGHTS[o], on: o !== "quiet", glow: o === "quiet" ? 0.1 : 0.8, speed: 2.4, value: p, o }; }
+  if (mode === "outcome") { const o = outcome(r); return { color: LIGHTS[o], on: o !== "quiet", glow: o === "quiet" ? 0.25 : 0.8, speed: 2.4, value: p, o }; }
   const up = state.dir === "up" || (state.dir === "any" && r.pu >= r.pd);
   const on = p >= state.t;
-  return { color: on ? (up ? "--n-up" : "--n-down") : "--n-quiet", on, glow: on ? 0.35 + 0.55 * p : 0.1, speed: 3.4 - 1.6 * p, value: p, o: outcome(r), up };
+  return { color: on ? (up ? "--n-up" : "--n-down") : "--n-quiet", on, glow: on ? 0.35 + 0.55 * p : 0.25, speed: 3.4 - 1.6 * p, value: p, o: outcome(r), up };
 }
 
 function renderMap() {
