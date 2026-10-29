@@ -82,12 +82,24 @@ python -m pip install -e ".[test]"
 python -m pytest
 ```
 
-Two free API keys are read from environment variables and are never written to files:
+### API keys
 
-| Variable | Where to get it |
+Two free API keys are read from environment variables and are never written to files.
+
+| Variable | How to get it |
 | --- | --- |
-| `ENTSOE_API_KEY` | an account at `transparency.entsoe.eu`, under Account Settings → Web API Access |
-| `ESIOS_API_KEY` | a token request at `esios.ree.es/en/token` |
+| `ENTSOE_API_KEY` | Register at https://transparency.entsoe.eu/usrm/user/createPublicUser, then email transparency@entsoe.eu with the subject "Restful API access" and your account email in the body. Once access is granted, generate the token under My Account Settings → Web API Security Token. |
+| `ESIOS_API_KEY` | Request a personal token at https://www.esios.ree.es/en/token. REE sends it by email. |
+
+Set each key once as a Windows user variable, then open a new terminal so it is picked up:
+
+```
+setx ENTSOE_API_KEY "your-entsoe-token"
+setx ESIOS_API_KEY "your-esios-token"
+```
+
+ENTSO-E allows up to 400 requests a minute. e-sios answers 403 when called too fast, so the downloads keep requests
+about 6 seconds apart and never run two e-sios jobs at once.
 
 ## Commands
 
