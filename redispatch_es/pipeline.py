@@ -156,8 +156,8 @@ def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
     return redispatch.groupby(KEY, as_index=False)["mwh"].sum(), days
 
 
-def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
-    """Read market, constraint, schedule, weather, per-unit output, routine and per-unit redispatch files, and pick the units to predict."""
+def load_inputs(config: Config, units: pd.DataFrame | None = None, routine: pd.DataFrame | None = None) -> Inputs:
+    """Read market, constraint, schedule, weather, per-unit output, routine and per-unit redispatch files, and pick the units to predict; a given routine replaces the routine files."""
     redispatch, days = load_redispatch(config)
     if units is None:
         units = select_units(config)
@@ -179,7 +179,7 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None) -> Inputs:
         unit_quarters=unit_quarters,
         unit_days=unit_days,
         schedule=_read_input(config, "schedule"),
-        routine=unit_routine(config, units),
+        routine=unit_routine(config, units) if routine is None else routine,
     )
 
 
@@ -218,7 +218,7 @@ def train(config: Config, inputs: Inputs, dataset: pd.DataFrame) -> tuple[dict, 
         feature_columns(config),
         config.model,
         categorical=CATEGORICAL,
-        extra={"units": inputs.units, "direction": config.labels.direction},
+        extra={"units": inputs.units, "direction": config.labels.direction, "routine": inputs.routine},
     )
     report["direction"] = config.labels.direction
     report["units"] = len(inputs.units)

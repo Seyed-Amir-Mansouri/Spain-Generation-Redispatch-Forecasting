@@ -73,16 +73,26 @@ A prediction is meant to be issued once the third intraday auction (IDA3) has cl
 
 Past redispatch per unit is never an input, because it arrives 90 days late. It is used only to train and score the models.
 
-## Setup
+## How to Run
 
-Requires Python 3.11 or newer. From this folder:
+### 1. What you need
+
+- Windows with Python 3.11 or newer from https://www.python.org/downloads/ (tick "Add python.exe to PATH" and keep the
+  `py` launcher).
+- Git from https://git-scm.com/downloads, or the ZIP from GitHub's Code → Download ZIP.
+- About 1 GB of free disk space.
+
+### 2. Get the code
 
 ```
-python -m pip install -e ".[test]"
-python -m pytest
+git clone https://github.com/Seyed-Amir-Mansouri/Spain-Generation-Redispatch-Forecasting.git
 ```
 
-### API keys
+The repository holds the code, the two trained models in `models/`, and the unit files they were trained on
+(`data/processed/unit_locations.csv` and REE's unit registry in `data/raw/registry/`). The market, weather, output and
+redispatch data are not included; the forecast page downloads what each day needs.
+
+### 3. API keys
 
 Two free API keys are read from environment variables and are never written to files.
 
@@ -91,7 +101,7 @@ Two free API keys are read from environment variables and are never written to f
 | `ENTSOE_API_KEY` | Register at https://transparency.entsoe.eu/usrm/user/createPublicUser, then email transparency@entsoe.eu with the subject "Restful API access" and your account email in the body. Once access is granted, generate the token under My Account Settings → Web API Security Token. |
 | `ESIOS_API_KEY` | Request a personal token at https://www.esios.ree.es/en/token. REE sends it by email. |
 
-Set each key once as a Windows user variable, then open a new terminal so it is picked up:
+Set each key once as a Windows user variable, then open a new terminal or File Explorer window so it is picked up:
 
 ```
 setx ENTSOE_API_KEY "your-entsoe-token"
@@ -100,6 +110,50 @@ setx ESIOS_API_KEY "your-esios-token"
 
 ENTSO-E allows up to 400 requests a minute. e-sios answers 403 when called too fast, so the downloads keep requests
 about 6 seconds apart and never run two e-sios jobs at once.
+
+### 4. Start the web UI
+
+Double-click `webui\app.bat`. The first start takes a few minutes: it creates a Python environment in
+`%LOCALAPPDATA%\webui_spain\.venv` and installs Django and this package with its libraries (pandas, LightGBM and the
+rest). It then starts the server on port 9100 and opens http://localhost:9100/. Close the server window to stop it.
+
+### 5. Forecast a day
+
+On the Forecast page, pick the delivery day, for example yesterday, and press **Check data**. The page lists what the
+day needs: the market data and weather of that day, and each unit's actual output on the two days before. Press the
+**Download**; only missing data is fetched and saved in `data/raw/`. Then press **Run the forecast**. The data for a day is
+complete about one day after delivery: OMIE's free intraday price files come out only after the delivery day, and
+ENTSO-E publishes unit output late. If the page marks a data set as late, download again later. The Data Status page
+shows what is out now.
+
+The Validation page works without any download: its results are in `webui/data/results.json`.
+
+### 6. Command line
+
+The same steps run from a terminal with the environment's Python:
+
+```
+set PY=%LOCALAPPDATA%\webui_spain\.venv\Scripts\python.exe
+%PY% -m redispatch_es plan --start 2026-10-28
+%PY% -m redispatch_es fetch-days --start 2026-10-28
+%PY% -m redispatch_es predict --date 2026-10-28
+```
+
+Forecasts are added to `outputs/redispatch_decisions.csv`.
+
+### 7. Retrain (optional)
+
+Retraining needs the full history: run the `fetch-*` commands under Commands for the whole period, then `train`. This
+takes many hours, mostly because of the gap between e-sios requests. It also needs REE's hourly redispatch files for
+May to September 2025 in `data/raw/i90/`, which `fetch-redispatch` no longer reads because it expects quarter-hours.
+Forecasting does not need them: the summer 2025 routine each unit had is stored inside the model files.
+
+To run the tests, from this folder:
+
+```
+python -m pip install -e ".[test]"
+python -m pytest
+```
 
 ## Commands
 

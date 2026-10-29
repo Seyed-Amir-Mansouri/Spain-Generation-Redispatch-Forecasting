@@ -268,7 +268,7 @@ def cmd_predict(args: argparse.Namespace) -> None:
     if not units.equals(bundles["Subir"]["units"]):
         print("the downward and upward models were trained on different units; run train for both directions", file=sys.stderr)
         sys.exit(1)
-    inputs = pipeline.load_inputs(config, units)
+    inputs = pipeline.load_inputs(config, units, bundles["Bajar"].get("routine"))
     dataset = pipeline.build(config, inputs, None, days)
     path = config.resolve(config.paths.predictions)
     failed = 0

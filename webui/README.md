@@ -12,11 +12,11 @@ A Django web UI for the redispatch forecast of the 41 units. The home page offer
 ## Start
 
 Double-click `app.bat`. It creates a Python environment in `%LOCALAPPDATA%\webui_spain\.venv` the first time, installs
-Django, starts the server on port 9100 and opens http://localhost:9100/. On the Tailscale network the page is at
+Django and the `redispatch_es` package with its libraries, starts the server on port 9100 and opens http://localhost:9100/. On the Tailscale network the page is at
 http://100.121.87.117:9100/. Close the server window to stop it.
 
-The forecast page runs the `redispatch_es` package with the Python that has it installed (`py -3` by default; set
-`PIPELINE_PYTHON` to the full path of another `python.exe`). `ENTSOE_API_KEY` and `ESIOS_API_KEY` must be set in the
+The forecast page runs the `redispatch_es` package with that environment's Python (set `PIPELINE_PYTHON` to the full
+path of another `python.exe` to use a different one). `ENTSOE_API_KEY` and `ESIOS_API_KEY` must be set in the
 environment the server starts from.
 
 ## Downloads
