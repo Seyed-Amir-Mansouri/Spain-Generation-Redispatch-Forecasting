@@ -90,7 +90,9 @@ function renderKeys(missing) {
   if (!missing.length) return;
   const many = missing.length > 1, word = many ? "keys" : "key";
   $("keys").innerHTML = `<b>Missing API ${word}: ${missing.join(", ")}.</b> The download needs ${many ? "them" : "it"}; both keys are free.
-    <h4>Add the ${word} to Windows</h4>
+    <h4>1. Get the ${word}</h4>
+    <ol>${missing.map(k => `<li><code>${k}</code>: ${KEY_HELP[k]}</li>`).join("")}</ol>
+    <h4>2. Add the ${word} to Windows</h4>
     <ol>
       <li>Press the Windows key, type <b>environment variables</b> and open <b>Edit environment variables for your account</b>.</li>
       <li>Under <b>User variables</b>, press <b>New…</b></li>
@@ -98,9 +100,7 @@ function renderKeys(missing) {
       <li>Press <b>OK</b> to close the Environment Variables window.</li>
       <li>Close the server window and double-click <code>webui\\app.bat</code> again, so the server reads the new ${word}. Then press Check data.</li>
     </ol>
-    <p>Or, in Command Prompt: ${missing.map(k => `<code>setx ${k} "your-token"</code>`).join(" and ")}, then restart the server as in step 5.</p>
-    <h4>No ${word} yet?</h4>
-    <ol>${missing.map(k => `<li><code>${k}</code>: ${KEY_HELP[k]}</li>`).join("")}</ol>`;
+    <p>Or, in Command Prompt: ${missing.map(k => `<code>setx ${k} "your-token"</code>`).join(" and ")}, then restart the server as in step 5.</p>`;
 }
 
 function renderTimeline() {
