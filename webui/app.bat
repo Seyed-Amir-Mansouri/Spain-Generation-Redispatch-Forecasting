@@ -18,7 +18,7 @@ if errorlevel 1 goto :fail
 "%VENV_PY%" -c "import django" >nul 2>&1
 if errorlevel 1 "%VENV_PY%" -m pip install -r requirements.txt
 if errorlevel 1 goto :fail
-"%VENV_PY%" -c "import redispatch_es.cli, joblib, lightgbm" >nul 2>&1
+"%VENV_PY%" -c "import redispatch_es.cli, joblib, lightgbm, pyarrow" >nul 2>&1
 if errorlevel 1 "%VENV_PY%" -m pip install -e ..
 if errorlevel 1 goto :fail
 if not defined PIPELINE_PYTHON set "PIPELINE_PYTHON=%VENV_PY%"
