@@ -70,10 +70,26 @@ function renderPlan() {
   const nextTry = rows.filter(r => r.status === "late" && !r.fetch).map(r => r.retry).sort()[0];
   $("download").textContent = plan.missing ? `Download ${plural(plan.missing, "item")}` + (retries ? ` (${retries} late, asked again)` : "")
     : plan.pending || plan.waiting ? "Nothing new to download yet" : "Everything is on disk";
-  $("download").disabled = !plan.missing || running();
+  $("download").disabled = !plan.missing || running() || plan.keys_missing.length > 0;
+  renderKeys(plan.keys_missing);
   $("folder").textContent = (plan.pending ? `${plural(plan.pending, "item")} not published yet. ` : "")
     + (nextTry ? `Late items were asked recently; they are asked again from ${when(nextTry)}. ` : "") + `Saved in ${plan.folder}`;
   renderRun();
+}
+
+const KEY_HELP = {
+  ENTSOE_API_KEY: `Register at <a href="https://transparency.entsoe.eu/usrm/user/createPublicUser" target="_blank" rel="noopener">transparency.entsoe.eu</a>, then email transparency@entsoe.eu with the subject "Restful API access" and your account email in the body. Once access is granted, generate the token under My Account Settings → Web API Security Token.`,
+  ESIOS_API_KEY: `Request a personal token at <a href="https://www.esios.ree.es/en/token" target="_blank" rel="noopener">esios.ree.es/en/token</a>. REE sends it by email.`,
+};
+
+// the download needs free API keys the server was started without
+function renderKeys(missing) {
+  $("keys").hidden = !missing.length;
+  if (!missing.length) return;
+  $("keys").innerHTML = `<b>Missing API ${missing.length > 1 ? "keys" : "key"}: ${missing.join(", ")}.</b> The download needs ${missing.length > 1 ? "them" : "it"}; both keys are free.
+    <ol>${missing.map(k => `<li>Get <code>${k}</code>: ${KEY_HELP[k]}</li>`).join("")}
+      <li>Open Command Prompt and run ${missing.map(k => `<code>setx ${k} "your-token"</code>`).join(" and ")}.</li>
+      <li>Close the server window and double-click <code>webui\\app.bat</code> again, so the server reads the new ${missing.length > 1 ? "keys" : "key"}. Then press Check data.</li></ol>`;
 }
 
 function renderTimeline() {

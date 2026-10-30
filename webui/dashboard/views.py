@@ -1,6 +1,7 @@
 """Pages and JSON feeds. Files are read on each request, so rebuilt data shows on the next reload."""
 import csv
 import json
+import os
 import tomllib
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -16,6 +17,7 @@ from . import jobs
 FIRST_DAY = date(2026, 1, 1)
 DEFAULT_DAY = date(2026, 7, 17)
 MAX_DAYS = 14
+API_KEYS = {"market": "ENTSOE_API_KEY", "generation": "ENTSOE_API_KEY", "constraints": "ESIOS_API_KEY", "schedule": "ESIOS_API_KEY"}
 
 
 def _load(path):
@@ -93,7 +95,10 @@ def plan(request):
         return _error(f"Could not run the pipeline: {error}", 500)
     if code != 0:
         return _error((err.strip().splitlines() or ["The data check failed."])[-1], 500)
-    return JsonResponse(json.loads(out.strip().splitlines()[-1]))
+    result = json.loads(out.strip().splitlines()[-1])
+    needed = {API_KEYS[d["key"]] for d in result["datasets"] if d["key"] in API_KEYS and any(r["fetch"] for r in d["rows"])}
+    result["keys_missing"] = sorted(key for key in needed if not os.environ.get(key))
+    return JsonResponse(result)
 
 
 @require_GET
