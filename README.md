@@ -126,7 +126,7 @@ about 6 seconds apart and never run two e-sios jobs at once.
 ### 4. Start the web UI
 
 Double-click `webui\app.bat`. The first start takes a few minutes: it creates a Python environment in
-`%LOCALAPPDATA%\Python\webui` and installs Django and this package with its libraries (pandas, LightGBM and the
+`webui\.venv` and installs Django and this package with its libraries (pandas, LightGBM and the
 rest). It then starts the server on port 9100 and opens http://localhost:9100/. Close the server window to stop it.
 
 ### 5. Forecast a day
@@ -145,7 +145,7 @@ The Validation page works without any download: its results are in `webui/data/r
 The same steps run from a terminal with the environment's Python:
 
 ```
-set PY=%LOCALAPPDATA%\Python\webui\Scripts\python.exe
+set PY=webui\.venv\Scripts\python.exe
 %PY% -m redispatch_es plan --start 2026-10-28
 %PY% -m redispatch_es fetch-days --start 2026-10-28
 %PY% -m redispatch_es predict --date 2026-10-28
