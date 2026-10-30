@@ -77,6 +77,8 @@ function renderPlan() {
   renderRun();
 }
 
+const capital = text => text[0].toUpperCase() + text.slice(1);
+
 const KEY_HELP = {
   ENTSOE_API_KEY: `Register at <a href="https://transparency.entsoe.eu/usrm/user/createPublicUser" target="_blank" rel="noopener">transparency.entsoe.eu</a>, then email transparency@entsoe.eu with the subject "Restful API access" and your account email in the body. Once access is granted, generate the token under My Account Settings → Web API Security Token.`,
   ESIOS_API_KEY: `Request a personal token at <a href="https://www.esios.ree.es/en/token" target="_blank" rel="noopener">esios.ree.es/en/token</a>. REE sends it by email.`,
@@ -86,10 +88,19 @@ const KEY_HELP = {
 function renderKeys(missing) {
   $("keys").hidden = !missing.length;
   if (!missing.length) return;
-  $("keys").innerHTML = `<b>Missing API ${missing.length > 1 ? "keys" : "key"}: ${missing.join(", ")}.</b> The download needs ${missing.length > 1 ? "them" : "it"}; both keys are free.
-    <ol>${missing.map(k => `<li>Get <code>${k}</code>: ${KEY_HELP[k]}</li>`).join("")}
-      <li>Open Command Prompt and run ${missing.map(k => `<code>setx ${k} "your-token"</code>`).join(" and ")}.</li>
-      <li>Close the server window and double-click <code>webui\\app.bat</code> again, so the server reads the new ${missing.length > 1 ? "keys" : "key"}. Then press Check data.</li></ol>`;
+  const many = missing.length > 1, word = many ? "keys" : "key";
+  $("keys").innerHTML = `<b>Missing API ${word}: ${missing.join(", ")}.</b> The download needs ${many ? "them" : "it"}; both keys are free.
+    <h4>Add the ${word} to Windows</h4>
+    <ol>
+      <li>Press the Windows key, type <b>environment variables</b> and open <b>Edit environment variables for your account</b>.</li>
+      <li>Under <b>User variables</b>, press <b>New…</b></li>
+      <li>${capital(missing.map(k => `for <b>Variable name</b> type <code>${k}</code> and for <b>Variable value</b> paste your ${k.startsWith("ENTSOE") ? "ENTSO-E" : "e-sios"} token, then press <b>OK</b>.`).join(" Press <b>New…</b> again, and "))}</li>
+      <li>Press <b>OK</b> to close the Environment Variables window.</li>
+      <li>Close the server window and double-click <code>webui\\app.bat</code> again, so the server reads the new ${word}. Then press Check data.</li>
+    </ol>
+    <p>Or, in Command Prompt: ${missing.map(k => `<code>setx ${k} "your-token"</code>`).join(" and ")}, then restart the server as in step 5.</p>
+    <h4>No ${word} yet?</h4>
+    <ol>${missing.map(k => `<li><code>${k}</code>: ${KEY_HELP[k]}</li>`).join("")}</ol>`;
 }
 
 function renderTimeline() {
