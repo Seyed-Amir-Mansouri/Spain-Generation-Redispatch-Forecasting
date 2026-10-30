@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 set "PORT=9100"
 set "PYTHONDONTWRITEBYTECODE=1"
-set "VENV_DIR=%~dp0.venv"
+set "VENV_DIR=%~dp0..\.venv"
 set "PY_CMD="
 py -3 -c "import sys" >nul 2>&1
 if not errorlevel 1 set "PY_CMD=py -3"

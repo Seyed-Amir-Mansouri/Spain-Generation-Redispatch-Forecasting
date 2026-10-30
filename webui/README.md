@@ -11,7 +11,7 @@ A Django web UI for the redispatch forecast of the 41 units. The home page offer
 
 ## Start
 
-Double-click `app.bat`. It creates a Python environment in `webui\.venv` the first time, installs
+Double-click `app.bat`. It creates a Python environment in `.venv` in the project folder the first time, installs
 Django and the `redispatch_es` package with its libraries, starts the server on port 9100 and opens http://localhost:9100/. On the Tailscale network the page is at
 http://100.121.87.117:9100/. Close the server window to stop it.
 
