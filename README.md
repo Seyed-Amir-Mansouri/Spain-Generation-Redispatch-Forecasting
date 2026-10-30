@@ -101,12 +101,24 @@ Two free API keys are read from environment variables and are never written to f
 | `ENTSOE_API_KEY` | Register at https://transparency.entsoe.eu/usrm/user/createPublicUser, then email transparency@entsoe.eu with the subject "Restful API access" and your account email in the body. Once access is granted, generate the token under My Account Settings → Web API Security Token. |
 | `ESIOS_API_KEY` | Request a personal token at https://www.esios.ree.es/en/token. REE sends it by email. |
 
-Set each key once as a Windows user variable, then open a new terminal or File Explorer window so it is picked up:
+Add each key once as a Windows user variable:
+
+1. Press the Windows key, type **environment variables** and open **Edit environment variables for your account**.
+2. Under **User variables**, press **New…**
+3. For **Variable name** type `ENTSOE_API_KEY`, and for **Variable value** paste your ENTSO-E token, then press **OK**.
+   Press **New…** again, and for **Variable name** type `ESIOS_API_KEY` and for **Variable value** paste your e-sios
+   token, then press **OK**.
+4. Press **OK** to close the Environment Variables window.
+5. If the server is running, close its window and double-click `webui\app.bat` again, so it reads the new keys.
+
+Or, in Command Prompt, then restart the server as in step 5:
 
 ```
 setx ENTSOE_API_KEY "your-entsoe-token"
 setx ESIOS_API_KEY "your-esios-token"
 ```
+
+If a key is missing, the Forecast page shows these steps when you press Check data.
 
 ENTSO-E allows up to 400 requests a minute. e-sios answers 403 when called too fast, so the downloads keep requests
 about 6 seconds apart and never run two e-sios jobs at once.
