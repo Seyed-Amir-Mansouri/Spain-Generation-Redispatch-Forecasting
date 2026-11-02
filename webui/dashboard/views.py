@@ -15,7 +15,6 @@ from django.views.decorators.http import require_GET, require_POST
 from . import jobs
 
 FIRST_DAY = date(2026, 1, 1)
-DEFAULT_DAY = date(2026, 7, 17)
 MAX_DAYS = 14
 API_KEYS = {"market": "ENTSOE_API_KEY", "generation": "ENTSOE_API_KEY", "constraints": "ESIOS_API_KEY", "schedule": "ESIOS_API_KEY"}
 
@@ -39,10 +38,9 @@ def _last_day():
 
 @ensure_csrf_cookie
 def forecast(request):
-    limits = {"first": f"{FIRST_DAY}", "last": f"{_last_day()}", "pick": [f"{DEFAULT_DAY}", f"{DEFAULT_DAY}"]}
+    limits = {"first": f"{FIRST_DAY}", "last": f"{_last_day()}", "pick": f"{_last_day()}"}
     try:
-        days = _days(request.GET)
-        limits["pick"] = [f"{days[0]}", f"{days[-1]}"]
+        limits["pick"] = f"{_days({'first': request.GET.get('day', ''), 'last': request.GET.get('day', '')})[0]}"
     except ValueError:
         pass
     return render(request, "dashboard/forecast.html", {"page": "forecast", "units": _load(settings.RESULTS_FILE)["units"], "limits": limits})

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import esios, estimator, generation, i90, inventory, ledger, locations, market, metrics, omie, pipeline, validate, weather
+from . import esios, estimator, features, generation, i90, inventory, ledger, locations, market, metrics, omie, pipeline, validate, weather
 from .config import DEFAULT_CONFIG, Config, load_config
 
 
@@ -272,7 +272,12 @@ def cmd_predict(args: argparse.Namespace) -> None:
     dataset = pipeline.build(config, inputs, None, days)
     path = config.resolve(config.paths.predictions)
     failed = 0
+    groups = features.input_groups(config)
     for day in days:
+        rows = dataset[dataset["delivery_date"] == day]
+        blank = [name for name, columns in groups.items() if len(rows) and rows[columns].isna().all().all()]
+        if blank:
+            print(f"{day:%Y-%m-%d}: no {', no '.join(blank)}; those inputs are left blank", flush=True)
         try:
             predictions = pipeline.predict_day(bundles, dataset, day, config.model.threshold, issued_at)
         except ValueError as error:

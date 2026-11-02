@@ -1,7 +1,6 @@
 const $ = id => document.getElementById(id);
 const UNITS = Object.fromEntries(JSON.parse($("units-data").textContent).map(u => [u.u, u]));
 const LIMITS = JSON.parse($("limits-data").textContent);
-const MAX_DAYS = 14;
 const STATUS = { have: "On disk", missing: "Published, ready to download", late: "Due, but the source has not published it yet",
   pending: "Not published yet", gap: "Final, with gaps at the source" };
 const SHORT = { market: "Single Day-Ahead Coupling (SDAC)", intraday: "Intraday auctions", constraints: "National Phase 1 redispatch", schedule: "Day-ahead schedule", weather: "Weather forecast", generation: "Unit output" };
@@ -30,7 +29,7 @@ async function api(url, body) {
   return data;
 }
 
-function dates() { return { first: $("first").value, last: $("last").value }; }
+function dates() { return { first: $("day").value, last: $("day").value }; }
 
 async function check() {
   const { first, last } = dates();
@@ -170,7 +169,8 @@ function waitingFor(day) {
   const lead = pending.length
     ? `can be forecast at ${when(plan.timeline[day].earliest)} at the earliest${late.length ? ", and only once the late items arrive" : ""}`
     : late.length ? "can be forecast once the late items arrive" : "can be forecast once the items below are downloaded";
-  return `<li><b>${fmt(day, true)}</b> ${lead}. ${parts.join(" ")}</li>`;
+  const now = ` <b>It can also be forecast now</b>, with ${plan.partial[day].map(k => SHORT[k]).join(", ")} left blank; those calls are less reliable, so run it again once the data is in.`;
+  return `<li><b>${fmt(day, true)}</b> ${lead}. ${parts.join(" ")}${now}</li>`;
 }
 
 function renderRun() {
@@ -185,15 +185,21 @@ function renderRun() {
     : `<div class="warn"><b>The models need retraining.</b> ${esc(model.reason)} Retraining uses every day with published redispatch and takes a while; when it is done, press Run the forecast.</div>`;
   $("train").hidden = model.ready;
   $("train").disabled = running();
-  $("run").disabled = !model.ready || !ready.length || running();
-  $("run").textContent = ready.length ? `Run the forecast for ${plural(ready.length, "day")}` : "Run the forecast";
+  const days = runnable(), partial = days.length - ready.length;
+  $("run").disabled = !model.ready || !days.length || running();
+  $("run").textContent = partial ? "Run the forecast with missing data" : "Run the forecast";
+}
+
+function runnable() {
+  const plan = state.plan;
+  return plan.days.filter(d => plan.ready.includes(d) || plan.partial[d]);
 }
 
 function running() { return !!(state.job && state.job.status === "running"); }
 
 async function startJob(kind) {
   const body = { kind, ...dates() };
-  if (kind === "forecast") body.days = state.plan.ready;
+  if (kind === "forecast") body.days = runnable();
   try {
     state.job = await api("/api/job/start/", body);
     renderJob();
@@ -271,38 +277,13 @@ async function showResults(first, last) {
 
 $("pick").addEventListener("submit", e => {
   e.preventDefault();
-  clearTimeout(rangeTimer);
-  if (["first", "last"].includes(document.activeElement.id)) keepRange(document.activeElement.id);
   check();
 });
 $("download").addEventListener("click", () => startJob("download"));
 $("run").addEventListener("click", () => startJob("forecast"));
 $("train").addEventListener("click", () => startJob("train"));
-function shift(text, days) { const d = new Date(text + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
-
-function keepRange(changed) {
-  const first = $("first").value, last = $("last").value;
-  const valid = d => d && d >= LIMITS.first && d <= LIMITS.last;
-  if (!valid(first) || !valid(last)) return;
-  if (changed === "first") {
-    const latest = [shift(first, MAX_DAYS - 1), LIMITS.last].sort()[0];
-    if (last < first) $("last").value = first;
-    else if (last > latest) $("last").value = latest;
-  } else {
-    const earliest = [shift(last, 1 - MAX_DAYS), LIMITS.first].sort()[1];
-    if (first > last) $("first").value = last;
-    else if (first < earliest) $("first").value = earliest;
-  }
-}
-// typing fires a change for every digit, so the other date is only adjusted once typing pauses or the field is left
-let rangeTimer = null;
-["first", "last"].forEach(id => {
-  $(id).addEventListener("change", () => { clearTimeout(rangeTimer); rangeTimer = setTimeout(() => keepRange(id), 800); });
-  $(id).addEventListener("blur", () => { clearTimeout(rangeTimer); keepRange(id); });
-});
-
 (async () => {
-  ["first", "last"].forEach((id, i) => { $(id).min = LIMITS.first; $(id).max = LIMITS.last; $(id).value = LIMITS.pick[i]; });
+  $("day").min = LIMITS.first; $("day").max = LIMITS.last; $("day").value = LIMITS.pick;
   try { state.job = await api("/api/job/"); } catch (e) { state.job = null; }
   if (running()) {
     renderJob();

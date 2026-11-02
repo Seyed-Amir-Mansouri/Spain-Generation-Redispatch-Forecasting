@@ -5,19 +5,18 @@
     <div class="brand">
       <div class="eyebrow">Forecast new days</div>
       <h1>Forecast</h1>
-      <p class="lede">Pick the delivery days you want to forecast. The tool lists the input data those days need, downloads only what is not on disk yet, and then calls each of the 41 units upward, downward or not redispatched for every hour of the day.</p>
+      <p class="lede">Pick the delivery day you want to forecast. The tool lists the input data that day needs, downloads only what is not on disk yet, and then calls each of the 41 units upward, downward or not redispatched for every hour of the day.</p>
     </div>
 {% endblock %}
 
 {% block content %}
   <section class="panel step" aria-labelledby="pick-title">
     <div class="step-head"><span class="step-num">1</span>
-      <div><h2 id="pick-title">Pick the delivery days</h2>
-        <p class="explain">Choose up to 14 delivery days, anywhere from 1 January 2026 up to tomorrow. Data up to 17 July 2026 is already on disk; later days are downloaded when you ask for them. A day's forecast uses data published before and on that day: the SDAC price and forecasts, REE's day-ahead schedule and National Phase 1 redispatch, the intraday auctions (IDA3 clears on the delivery day itself), the weather forecast, and each unit's actual output on the two days before.</p></div>
+      <div><h2 id="pick-title">Pick the delivery day</h2>
+        <p class="explain">Choose one delivery day, from 1 January 2026 up to tomorrow, which is the default. Data up to 17 July 2026 is already on disk; later days are downloaded when you ask for them. A day's forecast uses data published before and on that day: the SDAC price and forecasts, REE's day-ahead schedule and National Phase 1 redispatch, the intraday auctions (IDA3 clears on the delivery day itself), the weather forecast, and each unit's actual output on the two days before.</p></div>
     </div>
     <form class="pick" id="pick">
-      <label><span class="label">First day</span><input type="date" id="first" required></label>
-      <label><span class="label">Last day</span><input type="date" id="last" required></label>
+      <label><span class="label">Delivery day</span><input type="date" id="day" required></label>
       <button type="submit" class="btn primary" id="check">Check data</button>
     </form>
     <p class="hint" id="pick-note" role="status"></p>

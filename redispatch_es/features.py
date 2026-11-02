@@ -55,6 +55,18 @@ def feature_columns(config: Config) -> list[str]:
     )
 
 
+def input_groups(config: Config) -> dict[str, list[str]]:
+    """Group the inputs that can be missing on a forecast day by the dataset that brings them."""
+    return {
+        "day-ahead market data": ["day_ahead_price", "demand_forecast_mw", "wind_generation_forecast_mw", "solar_generation_forecast_mw"],
+        "intraday prices": [f"intraday{k}_price" for k in (1, 2, 3)],
+        "Phase I totals": [spain_redispatch_name(name) for name in config.constraint_indicators],
+        "day-ahead schedule": [spain_schedule_name(name) for name in config.schedule_indicators],
+        "weather": WEATHER_COLUMNS,
+        "unit output": GENERATION_COLUMNS,
+    }
+
+
 def add_weather(frame: pd.DataFrame, weather: pd.DataFrame, points: pd.DataFrame) -> pd.DataFrame:
     """Attach the weather forecast of each unit's area."""
     weather = weather.merge(points, on="point", how="inner").drop(columns="point").rename(columns=SOURCE_NAMES)
@@ -143,7 +155,12 @@ def build_dataset(
     schedule: pd.DataFrame | None = None,
     routine: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Join national inputs, unit descriptors, weather, each unit's recent output and routine to every unit with the target, one month at a time."""
+    """Join national inputs, unit descriptors, weather, each unit's recent output and routine to every unit with the target, one month at a time; asked dates without market data get every quarter-hour with those inputs blank."""
+    if dates is not None:
+        market = market.assign(delivery_date=pd.to_datetime(market["delivery_date"]).dt.normalize())
+        asked = pd.Series(pd.to_datetime(dates)).dt.normalize().astype(market["delivery_date"].dtype)
+        calendar = pd.DataFrame({"delivery_date": asked}).merge(pd.DataFrame({"period": range(96)}), how="cross")
+        market = market.merge(calendar, on=MARKET_KEY, how="outer")
     national = market.merge(constraints, on=MARKET_KEY, how="left")
     if schedule is not None:
         national = national.merge(schedule[MARKET_KEY + [name for name in config.schedule_indicators if name in schedule]], on=MARKET_KEY, how="left")

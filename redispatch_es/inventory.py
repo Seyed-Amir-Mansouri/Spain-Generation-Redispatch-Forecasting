@@ -200,7 +200,13 @@ def plan(config: Config, days: list[pd.Timestamp], now: datetime | None = None) 
         result.append({"key": key, "title": title, "source": source, "rows": rows})
     write_log(config, log)
     rows = [row for item in result for row in item["rows"]]
-    blocked = {user for row in rows if row["status"] not in ("have", "gap") for user in row["for"]}
+    lacking = {}
+    for item in result:
+        for row in item["rows"]:
+            if row["status"] not in ("have", "gap"):
+                for user in row["for"]:
+                    lacking.setdefault(user, []).append(item["key"])
+    lacking = {day: list(dict.fromkeys(keys)) for day, keys in lacking.items()}
     timeline = {}
     for day in days:
         used = [row for row in rows if f"{day:%Y-%m-%d}" in row["for"]]
@@ -218,7 +224,8 @@ def plan(config: Config, days: list[pd.Timestamp], now: datetime | None = None) 
         "missing": sum(row["fetch"] for row in rows),
         "pending": sum(row["status"] == "pending" for row in rows),
         "waiting": sum(row["status"] == "late" and not row["fetch"] for row in rows),
-        "ready": [f"{day:%Y-%m-%d}" for day in days if f"{day:%Y-%m-%d}" not in blocked],
+        "ready": [f"{day:%Y-%m-%d}" for day in days if f"{day:%Y-%m-%d}" not in lacking],
+        "partial": lacking,
         "timeline": timeline,
         "model": model_status(config),
     }
