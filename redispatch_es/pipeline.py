@@ -39,9 +39,25 @@ def _read_table(path, start: pd.Timestamp, end: pd.Timestamp | None = None) -> p
     return frame[keep].reset_index(drop=True)
 
 
-def _read_input(config: Config, name: str) -> pd.DataFrame:
-    """Read one quarter-hour input from the first 15-minute day."""
-    return _read_table(config.resolve(getattr(config.paths, name)), config.start)
+def _input_columns(config: Config, name: str) -> list[str]:
+    """List the columns of one quarter-hour input file."""
+    values = {
+        "market": ["da_price", "load_forecast_mw", "wind_forecast_mw", "solar_forecast_mw", "ida1_price", "ida2_price", "ida3_price"],
+        "constraints": list(config.constraint_indicators),
+        "schedule": list(config.schedule_indicators),
+        "weather": ["point", *weather.VARIABLES],
+    }[name]
+    return ["delivery_date", "period", *values]
+
+
+def _read_input(config: Config, name: str, missing_ok: bool = False) -> pd.DataFrame:
+    """Read one quarter-hour input from the first 15-minute day; a missing file gives no rows when missing_ok."""
+    path = config.resolve(getattr(config.paths, name))
+    if missing_ok and not path.exists():
+        columns = _input_columns(config, name)
+        empty = pd.DataFrame({column: pd.Series(dtype="float64") for column in columns})
+        return empty.astype({"delivery_date": "datetime64[us]", "period": "int64", **({"point": "object"} if "point" in columns else {})})
+    return _read_table(path, config.start)
 
 
 def _read_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
@@ -156,8 +172,8 @@ def load_redispatch(config: Config) -> tuple[pd.DataFrame, list[pd.Timestamp]]:
     return redispatch.groupby(KEY, as_index=False)["mwh"].sum(), days
 
 
-def load_inputs(config: Config, units: pd.DataFrame | None = None, routine: pd.DataFrame | None = None) -> Inputs:
-    """Read market, constraint, schedule, weather, per-unit output, routine and per-unit redispatch files, and pick the units to predict; a given routine replaces the routine files."""
+def load_inputs(config: Config, units: pd.DataFrame | None = None, routine: pd.DataFrame | None = None, missing_ok: bool = False) -> Inputs:
+    """Read market, constraint, schedule, weather, per-unit output, routine and per-unit redispatch files, and pick the units to predict; a given routine replaces the routine files, and with missing_ok a missing input file counts as empty."""
     redispatch, days = load_redispatch(config)
     if units is None:
         units = select_units(config)
@@ -165,11 +181,11 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None, routine: pd.D
     covered = redispatch.loc[redispatch["unit"].isin(set(units["unit"])), "mwh"].sum() / total if total else float("nan")
     places = unit_places(config)
     places = places[places["unit"].isin(set(units["unit"]))]
-    points, area = weather.area_weather(places, weather_spots(config, units), _read_input(config, "weather"), config.weather.area_degrees)
+    points, area = weather.area_weather(places, weather_spots(config, units), _read_input(config, "weather", missing_ok), config.weather.area_degrees)
     unit_quarters, unit_days = unit_generation(config, units)
     return Inputs(
-        market=_read_input(config, "market"),
-        constraints=_read_input(config, "constraints"),
+        market=_read_input(config, "market", missing_ok),
+        constraints=_read_input(config, "constraints", missing_ok),
         units=units,
         weather=area,
         points=points,
@@ -178,7 +194,7 @@ def load_inputs(config: Config, units: pd.DataFrame | None = None, routine: pd.D
         coverage=covered,
         unit_quarters=unit_quarters,
         unit_days=unit_days,
-        schedule=_read_input(config, "schedule"),
+        schedule=_read_input(config, "schedule", missing_ok),
         routine=unit_routine(config, units) if routine is None else routine,
     )
 

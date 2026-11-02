@@ -82,6 +82,8 @@ def add_generation(frame: pd.DataFrame, unit_quarters: pd.DataFrame | None, unit
         frame = frame.merge(unit_days[unit_days["delivery_date"].isin(days)], on=["delivery_date", "unit"], how="left")
     missing = [column for column in GENERATION_COLUMNS if column not in frame]
     frame[missing] = np.nan
+    empty = [column for column in GENERATION_COLUMNS if frame[column].dtype == object]
+    frame[empty] = frame[empty].astype("float64")
     return frame
 
 
